@@ -125,6 +125,14 @@ docker compose -f docker-compose.prod.yml up -d --build   # backend
 sudo systemctl reload nginx                                # se mudou o .conf
 ```
 
+> **Trocou `POSTGRES_PASSWORD` no `.env`?** O Postgres só lê essa variável na **primeira inicialização do volume** (`postgres_data`). Como o volume já existe depois do primeiro deploy, mudar a senha no `.env` e reiniciar **não muda a senha real dentro do Postgres** — o `byakugan_web`/`byakugan_celery` passam a tentar logar com uma senha que o banco não reconhece e ficam em crash loop (`FATAL: password authentication failed`, container em `Restarting`). Depois de trocar a senha no `.env`, sempre sincronize o banco também:
+> ```bash
+> docker exec -it byakugan_db psql -U byakugan -d byakugan \
+>   -c "ALTER USER byakugan WITH PASSWORD '<mesmo valor do POSTGRES_PASSWORD no .env>';"
+> docker compose -f docker-compose.prod.yml restart web celery
+> ```
+> (O `docker exec` conecta pelo socket Unix local, então não pede a senha antiga.)
+
 ## Parar / remover
 
 ```bash
