@@ -1,0 +1,46 @@
+# ===== Ambiente / segredos =====
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+
+# ===== Python / Django =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env.venv
+*.sqlite3
+*.log
+staticfiles/
+media/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# ===== Node / Frontend =====
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+coverage/
+.eslintcache
+
+# ===== Docker =====
+# (volumes são geridos pelo compose; nada a ignorar aqui por padrão)
+
+# ===== Editores / SO =====
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

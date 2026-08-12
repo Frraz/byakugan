@@ -1,0 +1,24 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ"]
+# DJ001: campos string nullable são decisão de design documentada em
+# docs/database.md (ip/hostname/domain/os/product/version/cve são nullable).
+ignore = ["E501", "DJ001"]
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+extend-exclude = "migrations"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["test_*.py", "tests.py"]
+addopts = "-ra"
+
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/migrations/*", "*/tests/*"]

@@ -1,0 +1,215 @@
+# API REST
+
+> Base: `/api`. Formato: JSON. Autenticação: **Bearer JWT** (exceto `login`, `register` público conforme política e `health`). Erros seguem `{ "detail": "..." }` ou `{ "campo": ["erro"] }`.
+
+## Convenções
+
+- Versionamento por prefixo (`/api/...`; futura `/api/v1/...`).
+- Paginação: `?page=&page_size=` → `{ count, next, previous, results }`.
+- Filtros comuns: `?ordering=`, `?search=`, filtros por campo conforme recurso.
+- Status codes: `200` ok, `201` criado, `204` sem conteúdo, `400` validação, `401` não autenticado, `403` sem permissão (RBAC), `404` não encontrado, `409` conflito (ex.: scan duplicado), `429` rate limit.
+
+---
+
+## Health
+
+### `GET /api/health/`
+Verifica se a API está no ar. Público.
+
+**200**
+```json
+{ "status": "ok", "service": "byakugan-api", "version": "0.1.0", "time": "2026-08-12T12:00:00Z" }
+```
+
+---
+
+## Autenticação
+
+> Tokens JWT: **access** expira em 15 min, **refresh** em 7 dias (rotação + blacklist no logout). Ver `docs/security.md`.
+
+### `POST /api/auth/login/`
+```json
+// request
+{ "email": "analyst@empresa.com", "password": "***" }
+// 200
+{ "access": "<jwt>", "refresh": "<jwt>", "user": { "id": "...", "email": "...", "role": "analyst" } }
+```
+
+### `POST /api/auth/refresh/`
+```json
+{ "refresh": "<jwt>" }  // → 200 { "access": "<jwt>" }
+```
+
+### `POST /api/auth/logout/`
+Invalida o refresh token (blacklist). Requer autenticação.
+```json
+{ "refresh": "<jwt>" }  // → 205 Reset Content
+```
+
+### `GET /api/auth/me/`
+Retorna o usuário autenticado.
+```json
+// 200
+{ "id": "...", "email": "analyst@empresa.com", "role": "analyst" }
+```
+
+### `POST /api/auth/register/`
+Criação de usuário (restrito a `admin`).
+```json
+{ "email": "...", "password": "***", "role": "analyst" }  // → 201
+```
+
+---
+
+## Targets
+
+### `GET /api/targets/`
+Lista alvos cadastrados. Filtros: `?is_active=`, `?search=` (name/value).
+
+### `POST /api/targets/`
+Cadastra um alvo com autorização (papel `analyst` ou `admin`). O `value` é validado (RN001) e `kind` é derivado.
+```json
+// request
+{
+  "name": "DMZ empresa X",
+  "value": "192.168.10.0/24",
+  "authorized_by": "João Silva (CISO)",
+  "authorization_scope": "192.168.10.0/24",
+  "authorization_expires_at": "2026-12-31T00:00:00Z"
+}
+// 201
+{ "id": "...", "name": "DMZ empresa X", "value": "192.168.10.0/24", "kind": "cidr", "is_active": true }
+// 400 — value malformado (RN001)
+{ "value": ["Alvo inválido: informe host, domínio, IP ou CIDR válido."] }
+```
+
+### `GET /api/targets/{id}/` · `PATCH` · `DELETE`
+Detalhe, atualização e exclusão (exclusão apenas `admin`, auditada — RN006).
+
+---
+
+## Assets
+
+### `GET /api/assets/`
+Lista ativos. Filtros: `?status=`, `?search=` (ip/hostname/domain).
+```json
+// 200 (results[])
+{ "id": "...", "ip": "192.168.0.10", "hostname": "web-01", "domain": "empresa.com", "os": "Ubuntu 24.04", "status": "active" }
+```
+
+### `GET /api/assets/{id}/`
+Detalhe do ativo, incluindo serviços e findings relacionados.
+
+### `GET /api/assets/{id}/services/`
+Lista serviços do ativo.
+```json
+{ "id": "...", "port": 443, "protocol": "tcp", "service_name": "https", "product": "nginx", "version": "1.24.0" }
+```
+
+### `GET /api/assets/{id}/technologies/`
+Lista as tecnologias identificadas no ativo pelo fingerprinting (*technology profile* — Fase 2).
+```json
+{
+  "id": "...", "asset": "...", "category": "web-server", "name": "nginx",
+  "version": "1.24.0", "source": "http-header", "evidence": "Server: nginx/1.24.0",
+  "confidence": "high"
+}
+```
+> `category`: `os` · `web-server` · `framework` · `language` · `frontend` · `cms` · `database` · `tls` · `other`. O detalhe do ativo (`GET /api/assets/{id}/`) já inclui `technologies` aninhadas.
+
+---
+
+## Scans
+
+### `GET /api/scans/`
+Lista scans. Filtros: `?status=`, `?scan_type=`.
+
+### `POST /api/scans/`
+Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target_ref`** (id de um Target cadastrado — a autorização é herdada) **ou** os campos de alvo/autorização inline. O alvo é validado contra o escopo antes de enfileirar (RN007) e a varredura só executa se `BYAKUGAN_SCANNING_ENABLED` estiver ativo.
+```json
+// request (via target cadastrado)
+{ "target_ref": "<target-id>", "scan_type": "discovery" }
+
+// request (inline)
+{
+  "target": "empresa.com",
+  "scan_type": "full",
+  "authorized_by": "João Silva (CISO)",
+  "authorization_scope": "domínio empresa.com e sub-redes internas"
+}
+// 201
+{ "id": "...", "status": "pending", "target": "empresa.com", "scan_type": "full", "created_at": "..." }
+// 400 — alvo fora do escopo autorizado (RN007)
+{ "detail": "Alvo fora do escopo autorizado." }
+// 409 — se já houver scan em execução para o mesmo alvo (RN002)
+{ "detail": "Já existe um scan em execução para este alvo." }
+```
+
+### `GET /api/scans/{id}/`
+Detalhe e estado do scan (`pending|running|completed|failed|cancelled`).
+
+### `POST /api/scans/{id}/cancel/`
+Cancela um scan em execução.
+
+### `GET /api/scans/{id}/findings/`
+Findings produzidos pelo scan.
+
+---
+
+## Vulnerabilities & Findings
+
+### `GET /api/vulnerabilities/`
+Catálogo de vulnerabilidades. Filtros: `?severity=`, `?search=` (cve/título).
+
+### `GET /api/findings/`
+Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`.
+```json
+{
+  "id": "...", "asset": "...", "scan": "...", "category": "tls",
+  "title": "TLS 1.0 habilitado", "severity": "medium", "cvss": 5.9,
+  "description": "...", "evidence": "...", "recommendation": "Desabilitar TLS 1.0/1.1"
+}
+```
+
+---
+
+## Reports
+
+### `GET /api/reports/`
+Lista relatórios gerados.
+
+### `POST /api/reports/`
+Gera um relatório para um scan.
+```json
+{ "scan": "<id>", "report_type": "executive", "format": "pdf" }  // → 201
+```
+
+### `GET /api/reports/{id}/download/`
+Baixa o artefato do relatório.
+
+---
+
+## Audit Logs
+
+### `GET /api/audit-logs/`
+Trilha de auditoria imutável. **Somente `admin`** (RNF007 / RN011). Read-only. Filtros: `?action=`, `?severity=`, `?search=`.
+```json
+{
+  "id": "...", "user": "...", "action": "scan.create", "severity": "info",
+  "source": "192.168.0.5", "metadata": { "scan_id": "...", "target": "empresa.com" },
+  "timestamp": "2026-08-12T12:00:00Z"
+}
+```
+
+---
+
+## AI Assistant (futuro)
+
+### `POST /api/ai/explain/`
+```json
+{ "finding": "<id>" }
+// 200
+{ "summary": "...", "evidence": "...", "impact": "...", "recommendation": "...", "confidence": "high" }
+```
+
+Ver `docs/ai-assistant.md` para o formato completo e limitações.
