@@ -1,154 +1,186 @@
-/** Detalhe do ativo — serviços expostos (RF007). */
+/** Detalhe do ativo — serviços, tecnologias e findings em abas (RF007). */
 
+import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-import { PageHeader } from "../components/PageHeader";
-import {
-  EmptyState,
-  ErrorBanner,
-  GlassPanel,
-  SeverityBadge,
-  Skeleton,
-  Table,
-  Td,
-  Th,
-} from "../components/ui";
-import { useAsset, useFindings } from "../hooks/useData";
+import { PageHeader } from "@/components/PageHeader";
+import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorBanner } from "@/components/ui/error-banner";
+import { GlassPanel } from "@/components/ui/glass-panel";
+import { SeverityBadge } from "@/components/ui/severity-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAsset, useFindings } from "@/hooks/useData";
+import { usePageTitle } from "@/hooks/usePageTitle";
+import type { Finding } from "@/lib/types";
 
 export function AssetDetailPage() {
   const { id = "" } = useParams();
   const asset = useAsset(id);
   const findings = useFindings({ asset: id });
+  const [selected, setSelected] = useState<Finding | null>(null);
 
-  if (asset.isLoading) return <Skeleton className="h-40 w-full" />;
+  usePageTitle(asset.data ? `Ativo · ${asset.data.hostname ?? asset.data.ip ?? ""}` : "Ativo");
+
+  if (asset.isLoading) return <Skeleton className="h-64 w-full rounded-2xl" />;
   if (asset.isError || !asset.data) return <ErrorBanner message="Ativo não encontrado." />;
 
   const a = asset.data;
   const services = a.services ?? [];
   const technologies = a.technologies ?? [];
-  const findingsList = findings.data?.results ?? [];
+  const findingList = findings.data?.results ?? [];
 
   return (
     <div>
+      <Link
+        to="/assets"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Voltar para assets
+      </Link>
+
       <PageHeader title={a.hostname ?? a.ip ?? "Ativo"} description={a.domain ?? undefined} />
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <GlassPanel>
-          <p className="text-xs uppercase tracking-wide text-muted">IP</p>
-          <p className="mt-1 font-mono text-primary">{a.ip ?? "—"}</p>
-        </GlassPanel>
-        <GlassPanel>
-          <p className="text-xs uppercase tracking-wide text-muted">Hostname</p>
-          <p className="mt-1">{a.hostname ?? "—"}</p>
-        </GlassPanel>
-        <GlassPanel>
-          <p className="text-xs uppercase tracking-wide text-muted">SO</p>
-          <p className="mt-1">{a.os ?? "—"}</p>
-        </GlassPanel>
-        <GlassPanel>
-          <p className="text-xs uppercase tracking-wide text-muted">Status</p>
-          <p className="mt-1 capitalize">{a.status}</p>
-        </GlassPanel>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: "IP", value: a.ip ?? "—", mono: true },
+          { label: "Hostname", value: a.hostname ?? "—" },
+          { label: "SO", value: a.os ?? "—" },
+          { label: "Status", value: a.status === "active" ? "Ativo" : "Inativo" },
+        ].map((item) => (
+          <GlassPanel key={item.label}>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+            <p className={`mt-1 ${item.mono ? "font-mono text-primary" : "text-foreground"}`}>
+              {item.value}
+            </p>
+          </GlassPanel>
+        ))}
       </div>
 
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Vulnerabilidades</h2>
-      {findingsList.length === 0 ? (
-        <EmptyState
-          title="Nenhum finding"
-          hint="Execute um scan de vulnerability (ou full) para correlacionar CVEs conhecidos."
-        />
-      ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Finding</Th>
-              <Th>Severidade</Th>
-              <Th>CVSS</Th>
-              <Th>Categoria</Th>
-              <Th>Recomendação</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {findingsList.map((f) => (
-              <tr key={f.id} className="hover:bg-white/5">
-                <Td className="font-medium text-foreground">{f.title}</Td>
-                <Td>
-                  <SeverityBadge severity={f.severity} />
-                </Td>
-                <Td className="font-mono text-primary">{f.cvss ?? "—"}</Td>
-                <Td>
-                  <Link
-                    to={`/knowledge?category=${encodeURIComponent(f.category)}`}
-                    className="text-muted hover:text-primary hover:underline"
-                  >
-                    {f.category}
-                  </Link>
-                </Td>
-                <Td className="max-w-md truncate text-muted">{f.recommendation}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
+      <Tabs defaultValue="findings" className="mt-8">
+        <TabsList>
+          <TabsTrigger value="findings">Findings ({findingList.length})</TabsTrigger>
+          <TabsTrigger value="services">Serviços ({services.length})</TabsTrigger>
+          <TabsTrigger value="technologies">Tecnologias ({technologies.length})</TabsTrigger>
+        </TabsList>
 
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Tecnologias</h2>
-      {technologies.length === 0 ? (
-        <EmptyState
-          title="Nenhuma tecnologia"
-          hint="Execute um scan de fingerprint para mapear as tecnologias deste ativo."
-        />
-      ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Categoria</Th>
-              <Th>Tecnologia</Th>
-              <Th>Versão</Th>
-              <Th>Confiança</Th>
-              <Th>Evidência</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {technologies.map((tech) => (
-              <tr key={tech.id} className="hover:bg-white/5">
-                <Td className="uppercase text-muted">{tech.category}</Td>
-                <Td className="font-medium text-foreground">{tech.name}</Td>
-                <Td className="font-mono text-primary">{tech.version ?? "—"}</Td>
-                <Td className="capitalize text-muted">{tech.confidence}</Td>
-                <Td className="text-muted">{tech.evidence || "—"}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
+        <TabsContent value="findings" className="mt-4">
+          {findings.isLoading ? (
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          ) : findingList.length === 0 ? (
+            <EmptyState
+              title="Nenhum finding"
+              hint="Execute um scan de vulnerability (ou full) para correlacionar CVEs conhecidos."
+            />
+          ) : (
+            <div className="glass overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Finding</TableHead>
+                    <TableHead>Severidade</TableHead>
+                    <TableHead>CVSS</TableHead>
+                    <TableHead>Categoria</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {findingList.map((f) => (
+                    <TableRow key={f.id} className="cursor-pointer" onClick={() => setSelected(f)}>
+                      <TableCell className="font-medium text-foreground">{f.title}</TableCell>
+                      <TableCell>
+                        <SeverityBadge severity={f.severity} />
+                      </TableCell>
+                      <TableCell className="font-mono text-muted-foreground">
+                        {f.cvss ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{f.category}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
 
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Serviços</h2>
-      {services.length === 0 ? (
-        <EmptyState title="Nenhum serviço" hint="Nenhum serviço exposto foi descoberto." />
-      ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Porta</Th>
-              <Th>Protocolo</Th>
-              <Th>Serviço</Th>
-              <Th>Produto</Th>
-              <Th>Versão</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {services.map((sv) => (
-              <tr key={sv.id} className="hover:bg-white/5">
-                <Td className="font-mono text-primary">{sv.port}</Td>
-                <Td className="uppercase text-muted">{sv.protocol}</Td>
-                <Td>{sv.service_name}</Td>
-                <Td className="text-muted">{sv.product ?? "—"}</Td>
-                <Td className="text-muted">{sv.version ?? "—"}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
+        <TabsContent value="services" className="mt-4">
+          {services.length === 0 ? (
+            <EmptyState title="Nenhum serviço" hint="Nenhum serviço exposto foi descoberto." />
+          ) : (
+            <div className="glass overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Porta</TableHead>
+                    <TableHead>Protocolo</TableHead>
+                    <TableHead>Serviço</TableHead>
+                    <TableHead>Produto</TableHead>
+                    <TableHead>Versão</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {services.map((sv) => (
+                    <TableRow key={sv.id}>
+                      <TableCell className="font-mono text-primary">{sv.port}</TableCell>
+                      <TableCell className="uppercase text-muted-foreground">{sv.protocol}</TableCell>
+                      <TableCell>{sv.service_name}</TableCell>
+                      <TableCell className="text-muted-foreground">{sv.product ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-muted-foreground">
+                        {sv.version ?? "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="technologies" className="mt-4">
+          {technologies.length === 0 ? (
+            <EmptyState
+              title="Nenhuma tecnologia"
+              hint="Execute um scan de fingerprint para mapear as tecnologias deste ativo."
+            />
+          ) : (
+            <div className="glass overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Tecnologia</TableHead>
+                    <TableHead>Versão</TableHead>
+                    <TableHead>Confiança</TableHead>
+                    <TableHead>Evidência</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {technologies.map((tech) => (
+                    <TableRow key={tech.id}>
+                      <TableCell className="uppercase text-muted-foreground">
+                        {tech.category}
+                      </TableCell>
+                      <TableCell className="font-medium text-foreground">{tech.name}</TableCell>
+                      <TableCell className="font-mono text-primary">{tech.version ?? "—"}</TableCell>
+                      <TableCell className="capitalize text-muted-foreground">
+                        {tech.confidence}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate text-muted-foreground">
+                        {tech.evidence || "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <FindingDetailSheet finding={selected} onOpenChange={(open) => !open && setSelected(null)} />
     </div>
   );
 }

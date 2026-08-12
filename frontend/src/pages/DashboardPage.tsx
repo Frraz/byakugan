@@ -1,95 +1,26 @@
-/** Dashboard SOC — KPI tiles, risco priorizado e heatmap (docs/ui.md). */
+/** Dashboard SOC — KPIs, gráficos de risco, heatmap e scans recentes (docs/ui.md). */
 
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { Boxes, Radar, ShieldAlert, Target as TargetIcon } from "lucide-react";
 
-import { PageHeader } from "../components/PageHeader";
-import { AssetsIcon, ScansIcon, TargetsIcon } from "../components/icons";
-import {
-  EmptyState,
-  SeverityBadge,
-  Skeleton,
-  StatCard,
-  StatusBadge,
-  Table,
-  Td,
-  Th,
-} from "../components/ui";
-import { useAssets, useRiskOverview, useScans, useTargets } from "../hooks/useData";
-import type { HeatmapCell, Severity } from "../lib/types";
-
-const RISK_ACCENT: Record<Severity, "danger" | "warning" | "primary" | "success" | "accent"> = {
-  critical: "danger",
-  high: "warning",
-  medium: "accent",
-  low: "primary",
-  info: "success",
-};
-
-const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
-
-const HEATMAP_CELL_STYLES: Record<Severity, string> = {
-  critical: "bg-danger/20 text-danger",
-  high: "bg-sev-high/20 text-sev-high",
-  medium: "bg-warning/20 text-warning",
-  low: "bg-primary/20 text-primary",
-  info: "bg-sev-info/20 text-slate-300",
-};
-
-function RiskHeatmap({ cells }: { cells: HeatmapCell[] }) {
-  const categories = Array.from(new Set(cells.map((c) => c.category))).sort();
-  const lookup = new Map(cells.map((c) => [`${c.category}|${c.severity}`, c.count]));
-
-  if (categories.length === 0) {
-    return (
-      <EmptyState
-        title="Sem dados para o heatmap"
-        hint="Execute scans de vulnerability (ou full) para popular a matriz de risco por categoria."
-      />
-    );
-  }
-
-  return (
-    <div className="thin-scroll overflow-x-auto">
-      <table className="w-full border-separate border-spacing-1 text-sm">
-        <thead>
-          <tr>
-            <th className="p-2 text-left text-xs uppercase tracking-wide text-muted">Categoria</th>
-            {SEVERITY_ORDER.map((sev) => (
-              <th
-                key={sev}
-                className="p-2 text-center text-xs uppercase tracking-wide text-muted"
-              >
-                {sev}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {categories.map((category) => (
-            <tr key={category}>
-              <td className="p-2 font-medium capitalize text-foreground">{category}</td>
-              {SEVERITY_ORDER.map((sev) => {
-                const count = lookup.get(`${category}|${sev}`) ?? 0;
-                return (
-                  <td
-                    key={sev}
-                    className={`rounded-md p-2 text-center font-mono ${
-                      count > 0 ? HEATMAP_CELL_STYLES[sev] : "text-muted/40"
-                    }`}
-                  >
-                    {count || "–"}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
+import { PageHeader } from "@/components/PageHeader";
+import { CategoryHeatmap } from "@/components/charts/CategoryHeatmap";
+import { SeverityDonut } from "@/components/charts/SeverityDonut";
+import { EmptyState } from "@/components/ui/empty-state";
+import { GlassPanel } from "@/components/ui/glass-panel";
+import { Progress } from "@/components/ui/progress";
+import { SeverityBadge } from "@/components/ui/severity-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatCard } from "@/components/ui/stat-card";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAssets, useRiskOverview, useScans, useTargets } from "@/hooks/useData";
+import { usePageTitle } from "@/hooks/usePageTitle";
+import { formatRelative } from "@/lib/format";
 
 export function DashboardPage() {
+  usePageTitle("Dashboard");
+  const navigate = useNavigate();
   const assets = useAssets();
   const scans = useScans();
   const targets = useTargets();
@@ -97,109 +28,169 @@ export function DashboardPage() {
 
   const scanList = scans.data?.results ?? [];
   const active = scanList.filter((s) => s.status === "running" || s.status === "pending").length;
-  const completed = scanList.filter((s) => s.status === "completed").length;
   const summary = risk.data?.summary;
   const topAssets = risk.data?.top_assets ?? [];
+  const severity = summary?.severity ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
   return (
     <div>
       <PageHeader title="Dashboard" description="Visão consolidada do ambiente monitorado." />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Ativos" value={assets.data?.count ?? "—"} icon={<AssetsIcon width={28} height={28} />} />
-        <StatCard label="Scans ativos" value={active} accent="primary" icon={<ScansIcon width={28} height={28} />} />
-        <StatCard label="Scans concluídos" value={completed} accent="success" />
-        <StatCard label="Alvos" value={targets.data?.count ?? "—"} accent="accent" icon={<TargetsIcon width={28} height={28} />} />
-      </div>
-
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Risco (Correlation Engine)</h2>
+      {/* KPIs principais */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
-          label="Risk Score"
-          value={summary ? `${summary.risk_score}/100` : "—"}
-          accent={summary ? RISK_ACCENT[summary.risk_level] : "primary"}
+          label="Ativos"
+          value={assets.data?.count ?? "—"}
+          icon={Boxes}
+          onClick={() => navigate("/assets")}
         />
-        <StatCard label="Findings críticos" value={summary?.severity.critical ?? "—"} accent="danger" />
-        <StatCard label="Findings altos" value={summary?.severity.high ?? "—"} accent="warning" />
-        <StatCard label="Findings médios" value={summary?.severity.medium ?? "—"} accent="accent" />
+        <StatCard
+          label="Alvos"
+          value={targets.data?.count ?? "—"}
+          accent="accent"
+          icon={TargetIcon}
+          onClick={() => navigate("/targets")}
+        />
+        <StatCard
+          label="Scans ativos"
+          value={active}
+          accent="primary"
+          icon={Radar}
+          onClick={() => navigate("/scans")}
+        />
+        <StatCard
+          label="Findings críticos"
+          value={summary?.severity.critical ?? "—"}
+          accent="danger"
+          icon={ShieldAlert}
+          onClick={() => navigate("/vulnerabilities")}
+        />
       </div>
 
-      <h3 className="mb-3 mt-6 text-sm font-semibold uppercase tracking-wide text-muted">
-        Ativos priorizados
-      </h3>
+      {/* Risco + distribuição */}
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <GlassPanel className="space-y-4">
+          <h2 className="text-sm font-semibold text-foreground">Risk Score</h2>
+          {risk.isLoading || !summary ? (
+            <Skeleton className="h-24 w-full" />
+          ) : (
+            <>
+              <div className="flex items-end justify-between">
+                <span className="text-4xl font-bold tabular-nums text-foreground">
+                  {summary.risk_score}
+                  <span className="text-lg text-muted-foreground">/100</span>
+                </span>
+                <SeverityBadge severity={summary.risk_level} />
+              </div>
+              <Progress value={summary.risk_score} className="h-2" />
+              <p className="text-xs text-muted-foreground">
+                {summary.findings} findings em {summary.assets} ativos.
+              </p>
+            </>
+          )}
+        </GlassPanel>
+
+        <GlassPanel className="lg:col-span-2">
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            Distribuição por severidade
+          </h2>
+          {risk.isLoading ? <Skeleton className="h-52 w-full" /> : <SeverityDonut counts={severity} />}
+        </GlassPanel>
+      </div>
+
+      {/* Ativos priorizados */}
+      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Ativos priorizados</h2>
       {risk.isLoading ? (
-        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
       ) : topAssets.length === 0 ? (
         <EmptyState
+          icon={ShieldAlert}
           title="Nenhum risco a priorizar"
           hint="Assim que scans de vulnerability produzirem findings, os ativos mais críticos aparecem aqui."
         />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Ativo</Th>
-              <Th>Risk Score</Th>
-              <Th>Nível</Th>
-              <Th>Findings</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {topAssets.map((a) => (
-              <tr key={a.asset} className="hover:bg-white/5">
-                <Td>
-                  <Link to={`/assets/${a.asset}`} className="font-medium text-primary hover:underline">
-                    {a.hostname ?? a.ip ?? a.domain ?? a.asset.slice(0, 8)}
-                  </Link>
-                </Td>
-                <Td className="font-mono text-foreground">{a.risk_score}/100</Td>
-                <Td>
-                  <SeverityBadge severity={a.risk_level} />
-                </Td>
-                <Td className="text-muted">{a.findings}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        <div className="glass overflow-x-auto p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ativo</TableHead>
+                <TableHead>Risk Score</TableHead>
+                <TableHead>Nível</TableHead>
+                <TableHead className="text-right">Findings</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {topAssets.map((a) => (
+                <TableRow key={a.asset}>
+                  <TableCell>
+                    <Link
+                      to={`/assets/${a.asset}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {a.hostname ?? a.ip ?? a.domain ?? a.asset.slice(0, 8)}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="font-mono">{a.risk_score}/100</TableCell>
+                  <TableCell>
+                    <SeverityBadge severity={a.risk_level} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {a.findings}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
-      <h3 className="mb-3 mt-6 text-sm font-semibold uppercase tracking-wide text-muted">
-        Heatmap por categoria
-      </h3>
-      {risk.isLoading ? <Skeleton className="h-32 w-full" /> : <RiskHeatmap cells={risk.data?.heatmap ?? []} />}
+      {/* Heatmap */}
+      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Heatmap por categoria</h2>
+      <GlassPanel>
+        {risk.isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : (
+          <CategoryHeatmap cells={risk.data?.heatmap ?? []} />
+        )}
+      </GlassPanel>
 
+      {/* Scans recentes */}
       <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Scans recentes</h2>
       {scans.isLoading ? (
-        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
       ) : scanList.length === 0 ? (
-        <EmptyState title="Nenhum scan ainda" hint="Cadastre um alvo e inicie uma descoberta." />
+        <EmptyState icon={Radar} title="Nenhum scan ainda" hint="Cadastre um alvo e inicie uma descoberta." />
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>Alvo</Th>
-              <Th>Tipo</Th>
-              <Th>Status</Th>
-              <Th>Criado</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {scanList.slice(0, 8).map((s) => (
-              <tr key={s.id} className="hover:bg-white/5">
-                <Td>
-                  <Link to={`/scans/${s.id}`} className="font-medium text-primary hover:underline">
-                    {s.target}
-                  </Link>
-                </Td>
-                <Td className="capitalize text-muted">{s.scan_type}</Td>
-                <Td>
-                  <StatusBadge status={s.status} />
-                </Td>
-                <Td className="text-muted">{new Date(s.created_at).toLocaleString("pt-BR")}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
+        <div className="glass overflow-x-auto p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Alvo</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Criado</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {scanList.slice(0, 8).map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell>
+                    <Link to={`/scans/${s.id}`} className="font-medium text-primary hover:underline">
+                      {s.target_name ?? s.target}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="capitalize text-muted-foreground">{s.scan_type}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={s.status} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatRelative(s.created_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </div>
   );

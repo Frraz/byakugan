@@ -3,12 +3,18 @@
 import { type FormEvent, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 
-import { EyeMark } from "../components/brand/Logo";
-import { Button, ErrorBanner, Field, Input } from "../components/ui";
-import { useLogin } from "../hooks/useAuth";
-import { useAuthStore } from "../store/auth";
+import { EyeMark } from "@/components/brand/Logo";
+import { Button } from "@/components/ui/button";
+import { ErrorBanner } from "@/components/ui/error-banner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useLogin } from "@/hooks/useAuth";
+import { usePageTitle } from "@/hooks/usePageTitle";
+import { errorMessage } from "@/lib/errors";
+import { useAuthStore } from "@/store/auth";
 
 export function LoginPage() {
+  usePageTitle("Entrar");
   const access = useAuthStore((s) => s.access);
   const navigate = useNavigate();
   const login = useLogin();
@@ -33,22 +39,27 @@ export function LoginPage() {
           <p className="text-[11px] font-semibold tracking-[0.32em] text-primary">
             CYBERSECURITY PLATFORM
           </p>
-          <p className="mt-3 text-sm text-muted">See Everything. Detect Everything.</p>
+          <p className="mt-3 text-sm text-muted-foreground">See Everything. Detect Everything.</p>
         </div>
 
         <form onSubmit={onSubmit} className="glass space-y-4 p-6">
-          <Field label="Email">
+          <div className="space-y-1.5">
+            <Label htmlFor="login-email">Email</Label>
             <Input
+              id="login-email"
               type="email"
               autoComplete="username"
               required
+              autoFocus
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="analyst@empresa.com"
             />
-          </Field>
-          <Field label="Senha">
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="login-password">Senha</Label>
             <Input
+              id="login-password"
               type="password"
               autoComplete="current-password"
               required
@@ -56,16 +67,16 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••"
             />
-          </Field>
+          </div>
 
-          {login.isError && <ErrorBanner message={(login.error as Error).message} />}
+          {login.isError && <ErrorBanner message={errorMessage(login.error)} />}
 
           <Button type="submit" className="w-full" disabled={login.isPending}>
             {login.isPending ? "Entrando…" : "Entrar"}
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-[11px] leading-relaxed text-muted">
+        <p className="mt-6 text-center text-[11px] leading-relaxed text-muted-foreground">
           Uso autorizado apenas. Toda análise exige autorização documentada.
         </p>
       </div>
