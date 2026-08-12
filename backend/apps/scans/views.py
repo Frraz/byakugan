@@ -8,7 +8,7 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import asdict
 
-from django.db.models import Count, Q
+from django.db.models import Count, OuterRef, Q, Subquery
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -20,20 +20,24 @@ from apps.core.audit import client_ip, record_audit
 from apps.core.permissions import IsAnalystOrAdmin, ReadOnlyOrAnalyst
 
 from .correlation import compute_asset_risk, compute_heatmap, compute_risk
-from .models import Finding, Scan, Severity, Target, Vulnerability
+from .models import Finding, FindingTriage, Scan, Severity, Target, Vulnerability
 from .serializers import (
     FindingSerializer,
+    FindingTriageInputSerializer,
+    FindingTriageSerializer,
     ScanCreateSerializer,
     ScanSerializer,
     TargetSerializer,
     VulnerabilitySerializer,
 )
 from .services import (
+    AuthorizationExpired,
     InvalidTransition,
     TargetOutOfScope,
     cancel_scan,
     create_scan,
     delete_scan,
+    triage_finding,
 )
 from .tasks import run_scan
 from .validators import InvalidTarget
@@ -147,12 +151,22 @@ class ScanViewSet(viewsets.ModelViewSet):
                 authorized_by=data.get("authorized_by"),
                 authorization_scope=data.get("authorization_scope"),
                 target_ref=data.get("target_ref"),
+                options=data.get("options"),
             )
         except InvalidTarget as exc:
             raise ValidationError({"target": str(exc)}) from exc
         except TargetOutOfScope as exc:
             record_audit(
                 "scan.out_of_scope",
+                user=request.user,
+                severity="warning",
+                source=client_ip(request),
+                target=data.get("target"),
+            )
+            raise PermissionDenied(str(exc)) from exc
+        except AuthorizationExpired as exc:
+            record_audit(
+                "scan.authorization_expired",
                 user=request.user,
                 severity="warning",
                 source=client_ip(request),
@@ -169,7 +183,10 @@ class ScanViewSet(viewsets.ModelViewSet):
             target=scan.target,
             scan_type=scan.scan_type,
         )
-        run_scan.delay(str(scan.id))
+        result = run_scan.delay(str(scan.id))
+        task_id = getattr(result, "id", None)
+        if task_id:
+            Scan.objects.filter(id=scan.id).update(celery_task_id=task_id)
         return Response(ScanSerializer(scan).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -240,7 +257,7 @@ class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class FindingViewSet(viewsets.ReadOnlyModelViewSet):
-    """Findings do ambiente — somente leitura (RF008)."""
+    """Findings do ambiente — somente leitura, exceto a ação de triagem (Fase 5)."""
 
     queryset = Finding.objects.select_related("scan", "asset", "vulnerability")
     serializer_class = FindingSerializer
@@ -249,6 +266,54 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ["title", "category", "vulnerability__cve"]
     ordering_fields = ["created_at", "severity", "cvss"]
 
+    def get_queryset(self):
+        # Subquery em vez de join direto: dedup_key não é uma FK (é um hash
+        # comparado por valor), então não dá pra usar select_related/
+        # prefetch_related — a annotation evita N+1 (uma query por Finding)
+        # ao listar, com fallback por instância em FindingSerializer.get_triage_status.
+        triage_status = FindingTriage.objects.filter(dedup_key=OuterRef("dedup_key")).values(
+            "status"
+        )[:1]
+        return (
+            Finding.objects.select_related("scan", "asset", "vulnerability")
+            .annotate(triage_status=Subquery(triage_status))
+            .order_by("-created_at")
+        )
+
+    def get_permissions(self):
+        if self.action == "triage":
+            return [IsAnalystOrAdmin()]
+        return [ReadOnlyOrAnalyst()]
+
+    @action(detail=True, methods=["post"])
+    def triage(self, request: Request, pk: str | None = None) -> Response:
+        """Classifica o achado lógico (por dedup_key) — aberto/corrigido/falso-positivo/risco aceito.
+
+        Afeta todos os ``Finding`` (passados e futuros) que compartilham o
+        mesmo ``dedup_key`` — não altera o ``Finding`` em si (RN003, imutável).
+        """
+        finding = self.get_object()
+        serializer = FindingTriageInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        triage = triage_finding(
+            dedup_key=finding.dedup_key,
+            asset=finding.asset,
+            status=serializer.validated_data["status"],
+            note=serializer.validated_data.get("note", ""),
+            updated_by=request.user,
+        )
+        record_audit(
+            "finding.triage",
+            user=request.user,
+            severity="info",
+            source=client_ip(request),
+            finding_id=str(finding.id),
+            dedup_key=finding.dedup_key,
+            status=triage.status,
+        )
+        return Response(FindingTriageSerializer(triage).data)
+
 
 class RiskOverviewView(APIView):
     """Correlation Engine: risk score, priorização e heatmap (Fase 4).
@@ -256,6 +321,10 @@ class RiskOverviewView(APIView):
     Computado sob demanda a partir dos ``Finding`` persistidos — não há
     modelo de "risco" próprio, então a resposta nunca fica desatualizada.
     Ver docs/scanning-engine.md (seção Correlation Engine).
+
+    Fase 5: achados triados como corrigido/falso-positivo/risco aceito
+    (``FindingTriage``) são excluídos do risk_score/heatmap — sem isso, o
+    score aditivo infla a cada reexecução do mesmo scan sobre o mesmo alvo.
     """
 
     permission_classes = [ReadOnlyOrAnalyst]
@@ -277,13 +346,24 @@ class RiskOverviewView(APIView):
                 "severity",
                 "cvss",
                 "category",
+                "dedup_key",
+            )
+        )
+        excluded_dedup_keys = set(
+            FindingTriage.objects.filter(status__in=FindingTriage.RESOLVED_STATUSES).values_list(
+                "dedup_key", flat=True
             )
         )
 
         return Response(
             {
-                "summary": {"assets": Asset.objects.count(), **asdict(compute_risk(rows))},
-                "top_assets": compute_asset_risk(rows)[:limit],
-                "heatmap": compute_heatmap(rows),
+                "summary": {
+                    "assets": Asset.objects.count(),
+                    **asdict(compute_risk(rows, excluded_dedup_keys=excluded_dedup_keys)),
+                },
+                "top_assets": compute_asset_risk(rows, excluded_dedup_keys=excluded_dedup_keys)[
+                    :limit
+                ],
+                "heatmap": compute_heatmap(rows, excluded_dedup_keys=excluded_dedup_keys),
             }
         )

@@ -6,6 +6,7 @@ import { apiFetch, downloadFile } from "../lib/api";
 import type {
   Asset,
   Finding,
+  FindingTriage,
   KnowledgeArticle,
   Paginated,
   Report,
@@ -13,9 +14,11 @@ import type {
   ReportType,
   RiskOverview,
   Scan,
+  ScanOptions,
   Service,
   Target,
   Technology,
+  TriageStatus,
   Vulnerability,
 } from "../lib/types";
 
@@ -124,6 +127,7 @@ export interface CreateScanInput {
   target?: string;
   authorized_by?: string;
   authorization_scope?: string;
+  options?: Partial<ScanOptions>;
 }
 
 export function useCreateScan() {
@@ -210,6 +214,29 @@ export function useFindings(params?: FindingFilters) {
   return useQuery({
     queryKey: ["findings", params],
     queryFn: () => apiFetch<Paginated<Finding>>("/findings/", { params }),
+  });
+}
+
+export interface TriageFindingInput {
+  id: string;
+  status: TriageStatus;
+  note?: string;
+}
+
+/** Classifica o achado lógico (por dedup_key) — aberto/corrigido/falso-positivo/risco aceito. */
+export function useTriageFinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status, note }: TriageFindingInput) =>
+      apiFetch<FindingTriage>(`/findings/${id}/triage/`, {
+        method: "POST",
+        body: { status, note },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["findings"] });
+      qc.invalidateQueries({ queryKey: ["scan"] });
+      qc.invalidateQueries({ queryKey: ["risk-overview"] });
+    },
   });
 }
 

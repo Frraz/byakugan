@@ -1,8 +1,19 @@
 /** Painel lateral com o detalhe completo de um finding (RN008 + Knowledge Base). */
 
+import { useState } from "react";
 import { Boxes, ExternalLink, Radar } from "lucide-react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
+import { CategoryBadge } from "@/components/ui/category-badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import {
   Sheet,
@@ -11,9 +22,40 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useKnowledgeArticles } from "@/hooks/useData";
+import { Textarea } from "@/components/ui/textarea";
+import { useKnowledgeArticles, useTriageFinding } from "@/hooks/useData";
+import { usePermissions } from "@/hooks/usePermissions";
+import { errorMessage } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
-import type { Finding } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type { Finding, TriageStatus } from "@/lib/types";
+
+const TRIAGE_LABELS: Record<TriageStatus, string> = {
+  open: "Aberto",
+  fixed: "Corrigido",
+  "false-positive": "Falso positivo",
+  "accepted-risk": "Risco aceito",
+};
+
+const TRIAGE_STYLES: Record<TriageStatus, string> = {
+  open: "bg-sev-info/15 text-sev-info border-sev-info/40",
+  fixed: "bg-success/15 text-success border-success/40",
+  "false-positive": "bg-secondary text-muted-foreground border-border",
+  "accepted-risk": "bg-warning/15 text-warning border-warning/40",
+};
+
+function TriageBadge({ status }: { status: TriageStatus }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+        TRIAGE_STYLES[status],
+      )}
+    >
+      {TRIAGE_LABELS[status]}
+    </span>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -32,6 +74,54 @@ function assetLabel(finding: Finding): string {
   return a.hostname || a.ip || a.domain || a.id.slice(0, 8);
 }
 
+/** Formulário de triagem — key={finding.id} no caller reseta o estado ao trocar de finding. */
+function TriageControls({ finding }: { finding: Finding }) {
+  const triage = useTriageFinding();
+  const [status, setStatus] = useState<TriageStatus>(finding.triage_status);
+  const [note, setNote] = useState("");
+
+  const dirty = status !== finding.triage_status || note.trim() !== "";
+
+  return (
+    <div className="space-y-2 rounded-xl border border-border bg-popover/50 p-3">
+      <Select value={status} onValueChange={(v) => setStatus(v as TriageStatus)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(TRIAGE_LABELS) as TriageStatus[]).map((s) => (
+            <SelectItem key={s} value={s}>
+              {TRIAGE_LABELS[s]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Nota (opcional) — motivo da triagem"
+        rows={2}
+      />
+      <Button
+        type="button"
+        size="sm"
+        disabled={!dirty || triage.isPending}
+        onClick={() =>
+          triage.mutate(
+            { id: finding.id, status, note },
+            {
+              onSuccess: () => toast.success("Triagem atualizada."),
+              onError: (err) => toast.error(errorMessage(err)),
+            },
+          )
+        }
+      >
+        {triage.isPending ? "Salvando…" : "Salvar triagem"}
+      </Button>
+    </div>
+  );
+}
+
 export function FindingDetailSheet({
   finding,
   onOpenChange,
@@ -43,6 +133,7 @@ export function FindingDetailSheet({
   const { data: kb } = useKnowledgeArticles(category ? { category } : undefined);
   const article = kb?.results?.[0];
   const vuln = finding?.vulnerability;
+  const { canWrite } = usePermissions();
 
   return (
     <Sheet open={Boolean(finding)} onOpenChange={onOpenChange}>
@@ -60,13 +151,18 @@ export function FindingDetailSheet({
                     CVSS {finding.cvss}
                   </span>
                 )}
-                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                  {finding.category}
-                </span>
+                <CategoryBadge category={finding.category} />
+                <TriageBadge status={finding.triage_status} />
               </div>
               <SheetTitle className="text-lg leading-snug">{finding.title}</SheetTitle>
               <SheetDescription className="sr-only">Detalhe do finding</SheetDescription>
             </SheetHeader>
+
+            {canWrite && (
+              <Section title="Triagem">
+                <TriageControls key={finding.id} finding={finding} />
+              </Section>
+            )}
 
             <Section title="Descrição">
               <p className="whitespace-pre-wrap text-sm text-foreground/90">{finding.description}</p>

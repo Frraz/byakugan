@@ -10,9 +10,12 @@ User ──< Target ──< Scan ──< Finding
              │          │        └──> Vulnerability (CVE)
              │          ▼
              │       Asset ──< Service
-             │          │ └──< Technology
+             │          │ ├──< Technology
+             │          │ └──< DnsRecord
              │          │
              └──────────┘  (Scan ──< Report)
+
+Asset ──< FindingTriage  (chaveado por Finding.dedup_key, não FK direta a Finding — ver findings)
 
 User ──< AuditLog
 
@@ -81,6 +84,20 @@ Tecnologia identificada num ativo pelo fingerprinting (Fase 2). Compõe o *techn
 
 > Chave natural: (`asset`, `category`, `name`). Reexecuções de fingerprint atualizam versão/evidência em vez de duplicar. Uma tecnologia de categoria `os` também preenche `assets.os`; uma `web-server` complementa `product`/`version` do `service` da porta correspondente.
 
+### dns_records
+Registro DNS não-host de um domínio (MX/NS/TXT/SOA/SRV — A/AAAA viram o próprio `Asset`).
+
+| Campo | Tipo | Notas |
+| --- | --- | --- |
+| id | UUID (PK) | |
+| asset | FK → assets | ativo/domínio de origem |
+| domain | string | domínio consultado |
+| record_type | enum | `MX` \| `NS` \| `TXT` \| `SOA` \| `SRV` |
+| value | string | valor bruto do registro |
+| created_at / updated_at | datetime | |
+
+> Chave natural única: (`asset`, `record_type`, `value`). Populado por `DnsAdapter`/`SubdomainAdapter`/`ZoneTransferAdapter`; usado por `EmailSecurityAdapter` para localizar SPF/DMARC/DKIM em `TXT`.
+
 ### scans
 Execução de análise sobre um ou mais alvos.
 
@@ -89,11 +106,15 @@ Execução de análise sobre um ou mais alvos.
 | id | UUID (PK) | |
 | created_by | FK → users | quem criou |
 | target_ref | FK → targets | alvo cadastrado de origem (nullable; ver nota de imutabilidade) |
-| target | string | alvo (host/domínio/lista) — cópia denormalizada |
+| target | string | alvo (host/domínio/IP/CIDR/lista) — cópia denormalizada |
 | scan_type | enum | `discovery` \| `fingerprint` \| `vulnerability` \| `full` |
 | status | enum | `pending` \| `running` \| `completed` \| `failed` \| `cancelled` |
 | authorized_by | string | registro de autorização (RNF010 / RN007) |
 | authorization_scope | text | escopo permitido |
+| options | jsonb | perfil normalizado (`intensity`/`port_set`/`wordlist_size`/`max_hosts`/`max_pages`/`max_workers`/`rate_delay`/`enabled_checks`) — ver `docs/scanning-engine.md` |
+| progress | smallint | 0–100, atualizado durante a execução |
+| phase | string | adapter/host correntes (ex.: `"tls @ 192.168.0.10"`) |
+| celery_task_id | string | id da task Celery — usado para revogar no cancelamento |
 | started_at / finished_at | datetime | nullable |
 | created_at / updated_at | datetime | |
 
@@ -126,27 +147,43 @@ Vulnerabilidade conhecida (catálogo, referenciável por vários findings).
 | references | jsonb | lista de URLs |
 | created_at / updated_at | datetime | |
 
-> Populado pelo `CveLookupAdapter` (Fase 3) via correlação NVD CVE 2.0 por produto/versão. Chave natural: `cve` — reaproveitado entre scans (`get_or_create`), nunca duplicado.
+> Populado pelo `CveLookupAdapter` via correlação NVD CVE 2.0, priorizando busca por CPE (`virtualMatchString`) com fallback por palavra-chave produto/versão. Chave natural: `cve` — reaproveitado entre scans (`get_or_create`), nunca duplicado.
 
 ### findings
-Ocorrência concreta de uma vulnerabilidade num ativo, detectada por um scan.
+Ocorrência concreta de uma vulnerabilidade/exposição num ativo, detectada por um scan.
 
 | Campo | Tipo | Notas |
 | --- | --- | --- |
 | id | UUID (PK) | |
 | scan | FK → scans | rastreabilidade (RN005) |
 | asset | FK → assets | |
-| vulnerability | FK → vulnerabilities | nullable |
-| category | string | ex.: `web`, `network`, `tls` |
+| vulnerability | FK → vulnerabilities | nullable — nem todo finding tem CVE (ex.: TLS, exposição, injeção) |
+| category | enum | 15 valores — `software`\|`service`\|`network`\|`credential`\|`tls`\|`certificate`\|`dns`\|`email-security`\|`subdomain`\|`web-headers`\|`cookie`\|`cors`\|`exposure`\|`http-method`\|`injection` |
 | title | string | |
 | severity | enum | ver acima |
 | cvss | decimal(3,1) | nullable |
-| description | text | obrigatório (RN — finding sem contexto não é salvo) |
+| description | text | obrigatório (RN008/RN019 — enforçado no modelo) |
 | evidence | text | obrigatório |
 | recommendation | text | obrigatório |
+| dedup_key | string(64) | hash de `asset + category + título normalizado` — identifica o achado lógico entre execuções (não único: várias linhas compartilham o mesmo valor) |
 | created_at / updated_at | datetime | |
 
-> Diferente de `assets`/`services`/`technologies` (inventário corrente, deduplicado), cada `finding` é **imutável e amarrado ao scan que o gerou** (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os anteriores.
+> Diferente de `assets`/`services`/`technologies` (inventário corrente, deduplicado), cada `finding` é **imutável e amarrado ao scan que o gerou** (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os anteriores. `dedup_key` reconhece o "mesmo" achado entre essas reexecuções sem violar essa imutabilidade — ver `finding_triages`.
+
+### finding_triages
+Estado de triagem **mutável** de um achado lógico (por `dedup_key`).
+
+| Campo | Tipo | Notas |
+| --- | --- | --- |
+| id | UUID (PK) | |
+| dedup_key | string(64) | **único** — um registro de triagem por achado lógico |
+| asset | FK → assets | `CASCADE` |
+| status | enum | `open` \| `fixed` \| `false-positive` \| `accepted-risk` |
+| note | text | opcional |
+| updated_by | FK → users | nullable (`SET_NULL`) |
+| created_at / updated_at | datetime | |
+
+> Camada separada de `findings` justamente para nunca violar RN003: triar um achado (`POST /api/findings/{id}/triage/`) faz `update_or_create` por `dedup_key` — idempotente, nunca duplica. `fixed`/`false-positive`/`accepted-risk` excluem o achado da soma do `risk_score` (Correlation Engine).
 
 ### reports
 Relatório gerado a partir de um scan.

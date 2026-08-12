@@ -110,7 +110,7 @@ Lista serviços do ativo.
 ```
 
 ### `GET /api/assets/{id}/technologies/`
-Lista as tecnologias identificadas no ativo pelo fingerprinting (*technology profile* — Fase 2).
+Lista as tecnologias identificadas no ativo pelo fingerprinting (*technology profile*).
 ```json
 {
   "id": "...", "asset": "...", "category": "web-server", "name": "nginx",
@@ -120,39 +120,53 @@ Lista as tecnologias identificadas no ativo pelo fingerprinting (*technology pro
 ```
 > `category`: `os` · `web-server` · `framework` · `language` · `frontend` · `cms` · `database` · `tls` · `other`. O detalhe do ativo (`GET /api/assets/{id}/`) já inclui `technologies` aninhadas.
 
+### `GET /api/assets/{id}/dns-records/`
+Lista registros DNS não-host descobertos do domínio do ativo (MX/NS/TXT/SOA/SRV — A/AAAA viram o próprio `Asset`).
+```json
+{ "id": "...", "asset": "...", "domain": "empresa.com", "record_type": "TXT", "value": "v=spf1 -all" }
+```
+
 ---
 
 ## Scans
 
 ### `GET /api/scans/`
-Lista scans. Filtros: `?status=`, `?scan_type=`, `?search=` (target). Cada item inclui contexto agregado para a UI: `target_name` (nome do Target cadastrado, se vinculado), `findings_count` e `severity_counts` (`{"critical": n, "high": n, "medium": n, "low": n, "info": n}`).
+Lista scans. Filtros: `?status=`, `?scan_type=`, `?search=` (target). Cada item inclui contexto agregado para a UI: `target_name` (nome do Target cadastrado, se vinculado), `options` (perfil normalizado — ver `docs/scanning-engine.md`), `progress` (0–100), `phase` (adapter/host corrente, ex. `"tls @ 192.168.0.10"`), `findings_count` e `severity_counts` (`{"critical": n, "high": n, "medium": n, "low": n, "info": n}`).
 
 ### `POST /api/scans/`
-Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target_ref`** (id de um Target cadastrado — a autorização é herdada) **ou** os campos de alvo/autorização inline. O alvo é validado contra o escopo antes de enfileirar (RN007) e a varredura só executa se `BYAKUGAN_SCANNING_ENABLED` estiver ativo.
+Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target_ref`** (id de um Target cadastrado — a autorização é herdada) **ou** os campos de alvo/autorização inline, e opcionalmente `options` (perfil de intensidade — normalizado por `profiles.normalize_options`, campos ausentes assumem o padrão de `intensity`). O alvo é validado contra o escopo antes de enfileirar (RN007), a autorização do `target_ref` não pode estar expirada (RN015), e a varredura só executa se `BYAKUGAN_SCANNING_ENABLED` estiver ativo.
 ```json
 // request (via target cadastrado)
 { "target_ref": "<target-id>", "scan_type": "discovery" }
 
-// request (inline)
+// request (inline, com opções)
 {
   "target": "empresa.com",
   "scan_type": "full",
   "authorized_by": "João Silva (CISO)",
-  "authorization_scope": "domínio empresa.com e sub-redes internas"
+  "authorization_scope": "domínio empresa.com e sub-redes internas",
+  "options": { "intensity": "aggressive", "port_set": "top1000", "enabled_checks": ["dns", "tls", "cve-lookup"] }
 }
 // 201
-{ "id": "...", "status": "pending", "target": "empresa.com", "scan_type": "full", "created_at": "..." }
-// 400 — alvo fora do escopo autorizado (RN007)
+{
+  "id": "...", "status": "pending", "target": "empresa.com", "scan_type": "full",
+  "options": { "intensity": "aggressive", "port_set": "top1000", "wordlist_size": 1000, "max_hosts": 256, "max_pages": 100, "max_workers": 32, "rate_delay": 0.0, "enabled_checks": ["dns", "tls", "cve-lookup"] },
+  "progress": 0, "phase": "", "created_at": "..."
+}
+// 403 — alvo fora do escopo autorizado (RN007)
 { "detail": "Alvo fora do escopo autorizado." }
+// 403 — autorização do target_ref expirada (RN015)
+{ "detail": "Autorização do alvo expirou." }
 // 409 — se já houver scan em execução para o mesmo alvo (RN002)
 { "detail": "Já existe um scan em execução para este alvo." }
 ```
+> Campos de `options`: `intensity` (`safe`\|`normal`\|`aggressive`), `port_set` (`top16`\|`top100`\|`top1000`), `wordlist_size`, `max_hosts`, `max_pages`, `max_workers`, `rate_delay`, `enabled_checks` (lista de nomes de adapter; `null`/ausente = todos do `scan_type`). Ver `docs/scanning-engine.md` para os tetos absolutos e o efeito de cada perfil.
 
 ### `GET /api/scans/{id}/`
-Detalhe e estado do scan (`pending|running|completed|failed|cancelled`).
+Detalhe e estado do scan (`pending|running|completed|failed|cancelled`), incluindo `progress`/`phase` atualizados durante a execução (poll este endpoint enquanto `pending`/`running`).
 
 ### `POST /api/scans/{id}/cancel/`
-Cancela um scan em execução.
+Cancela um scan em execução. Cooperativo: o worker interrompe entre lotes de probe (`ScanContext.check_cancelled()`), e a task Celery é revogada quando possível.
 
 ### `GET /api/scans/{id}/findings/`
 Findings produzidos pelo scan.
@@ -186,9 +200,25 @@ Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`, `?category=`, 
     "cvss_score": "7.5", "cvss_vector": "CVSS:3.1/...", "references": ["https://..."]
   },
   "title": "TLS 1.0 habilitado", "severity": "medium", "cvss": 5.9,
-  "description": "...", "evidence": "...", "recommendation": "Desabilitar TLS 1.0/1.1"
+  "description": "...", "evidence": "...", "recommendation": "Desabilitar TLS 1.0/1.1",
+  "dedup_key": "a3f5...", "triage_status": "open"
 }
 ```
+> `category`: uma das 15 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado).
+
+### `POST /api/findings/{id}/triage/`
+Classifica o achado lógico (por `dedup_key`, RN018) — afeta **todos** os `Finding` passados e futuros que compartilham o mesmo `dedup_key`, sem alterar o `Finding` em si (RN003). Requer papel `analyst` ou `admin`; auditado (`finding.triage`, RN011).
+```json
+// request
+{ "status": "false-positive", "note": "Confirmado falso positivo em revisão manual." }
+// 200
+{
+  "id": "...", "dedup_key": "a3f5...", "asset": "<asset-id>", "status": "false-positive",
+  "note": "Confirmado falso positivo em revisão manual.", "updated_by": "<user-id>",
+  "created_at": "...", "updated_at": "..."
+}
+```
+> Idempotente: triar o mesmo `dedup_key` de novo **atualiza** a triagem existente em vez de duplicar. Achados triados como `fixed`/`false-positive`/`accepted-risk` são excluídos da soma do `risk_score` e do heatmap em `GET /api/risk/overview/` — ver `docs/scanning-engine.md` (seção Dedup & triagem).
 
 ---
 
@@ -219,12 +249,12 @@ Risk assessment computado sob demanda a partir dos `Finding` persistidos — nã
     }
   ],
   "heatmap": [
-    { "category": "tls", "severity": "medium", "count": 3 },
-    { "category": "software", "severity": "high", "count": 12 }
+    { "category": "tls", "category_label": "TLS", "severity": "medium", "count": 3 },
+    { "category": "software", "category_label": "Software (CVE)", "severity": "high", "count": 12 }
   ]
 }
 ```
-> `top_assets` vem ordenado por `risk_score` decrescente (priorização automática). `heatmap` é uma lista plana de células `{category, severity, count}` — o frontend faz o pivô para a grade.
+> `top_assets` vem ordenado por `risk_score` decrescente (priorização automática). `heatmap` é uma lista plana de células `{category, category_label, severity, count}` — o frontend faz o pivô para a grade; `category_label` já vem em PT-BR pronto para exibição. Achados triados como resolvidos (`fixed`/`false-positive`/`accepted-risk` — RN018) são excluídos de `summary`, `top_assets` e `heatmap`.
 
 ---
 

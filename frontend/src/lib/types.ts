@@ -49,6 +49,23 @@ export interface SeverityCounts {
   info: number;
 }
 
+// --- Motor ofensivo: perfis/opções de scan (Fase 0-4 do plano ofensivo) ---
+
+export type Intensity = "safe" | "normal" | "aggressive";
+export type PortSet = "top16" | "top100" | "top1000";
+
+export interface ScanOptions {
+  intensity: Intensity;
+  port_set: PortSet;
+  wordlist_size: number;
+  max_hosts: number;
+  max_pages: number;
+  max_workers: number;
+  rate_delay: number;
+  /** `null` = todos os checks do scan_type habilitados (padrão). */
+  enabled_checks: string[] | null;
+}
+
 export interface Scan {
   id: string;
   created_by: string;
@@ -62,6 +79,9 @@ export interface Scan {
   started_at: string | null;
   finished_at: string | null;
   failure_reason: string;
+  options: ScanOptions;
+  progress: number;
+  phase: string;
   findings_count: number;
   severity_counts: SeverityCounts;
   created_at: string;
@@ -143,18 +163,53 @@ export interface ScanSummary {
   created_at: string;
 }
 
+/** Categorias de finding produzidas pelo motor ofensivo (backend FindingCategory). */
+export type FindingCategory =
+  | "software"
+  | "service"
+  | "network"
+  | "credential"
+  | "tls"
+  | "certificate"
+  | "dns"
+  | "email-security"
+  | "subdomain"
+  | "web-headers"
+  | "cookie"
+  | "cors"
+  | "exposure"
+  | "http-method"
+  | "injection";
+
+// --- Correlação & triagem (Fase 5) ---
+
+export type TriageStatus = "open" | "fixed" | "false-positive" | "accepted-risk";
+
+export interface FindingTriage {
+  id: string;
+  dedup_key: string;
+  asset: string;
+  status: TriageStatus;
+  note: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Finding {
   id: string;
   scan: ScanSummary | null;
   asset: AssetSummary | null;
   vulnerability: Vulnerability | null;
-  category: string;
+  category: FindingCategory;
   title: string;
   severity: Severity;
   cvss: number | null;
   description: string;
   evidence: string;
   recommendation: string;
+  dedup_key: string;
+  triage_status: TriageStatus;
   created_at: string;
 }
 
@@ -188,6 +243,7 @@ export interface AssetRisk {
 
 export interface HeatmapCell {
   category: string;
+  category_label: string;
   severity: Severity;
   count: number;
 }

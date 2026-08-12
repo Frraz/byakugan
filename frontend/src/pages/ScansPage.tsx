@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { ScanDeleteDialog } from "@/components/scans/ScanDeleteDialog";
 import { ScanFormDialog } from "@/components/scans/ScanFormDialog";
+import { ScanProgress } from "@/components/scans/ScanProgress";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataPagination } from "@/components/ui/data-pagination";
@@ -191,6 +192,9 @@ export function ScansPage() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={s.status} />
+                      {isActive(s) && (
+                        <ScanProgress progress={s.progress} phase={s.phase} className="mt-1.5 w-36" />
+                      )}
                     </TableCell>
                     <TableCell>
                       <SeveritySummary counts={s.severity_counts} />

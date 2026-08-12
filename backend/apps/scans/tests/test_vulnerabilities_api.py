@@ -6,7 +6,8 @@ import pytest
 from django.urls import reverse
 
 from apps.assets.models import Asset
-from apps.scans.models import Finding, Vulnerability
+from apps.core.models import AuditLog
+from apps.scans.models import Finding, FindingTriage, Vulnerability
 from apps.scans.tests.factories import ScanFactory
 
 pytestmark = pytest.mark.django_db
@@ -132,3 +133,76 @@ def test_search_findings_by_title_and_cve(viewer_client, finding_with_vulnerabil
         == 1
     )
     assert viewer_client.get(reverse("scans:finding-list"), {"search": "xyz"}).data["count"] == 0
+
+
+def test_finding_defaults_to_open_triage_status(viewer_client, finding_with_vulnerability):
+    resp = viewer_client.get(reverse("scans:finding-list"))
+    assert resp.data["results"][0]["triage_status"] == "open"
+    assert resp.data["results"][0]["dedup_key"] == finding_with_vulnerability.dedup_key
+
+
+# --- Triage (Fase 5) ---
+
+
+def _triage_url(finding):
+    return reverse("scans:finding-triage", args=[finding.id])
+
+
+def test_triage_requires_auth(api_client, finding_with_vulnerability):
+    resp = api_client.post(_triage_url(finding_with_vulnerability), {"status": "fixed"})
+    assert resp.status_code == 401
+
+
+def test_viewer_cannot_triage(viewer_client, finding_with_vulnerability):
+    resp = viewer_client.post(_triage_url(finding_with_vulnerability), {"status": "fixed"})
+    assert resp.status_code == 403
+    assert not FindingTriage.objects.exists()
+
+
+def test_analyst_can_triage_finding(analyst_client, finding_with_vulnerability):
+    resp = analyst_client.post(
+        _triage_url(finding_with_vulnerability),
+        {"status": "false-positive", "note": "Confirmado falso positivo."},
+    )
+    assert resp.status_code == 200
+    assert resp.data["status"] == "false-positive"
+    assert resp.data["note"] == "Confirmado falso positivo."
+    assert resp.data["dedup_key"] == finding_with_vulnerability.dedup_key
+
+    triage = FindingTriage.objects.get(dedup_key=finding_with_vulnerability.dedup_key)
+    assert triage.status == "false-positive"
+    assert triage.asset_id == finding_with_vulnerability.asset_id
+
+
+def test_admin_can_triage_finding(admin_client, finding_with_vulnerability):
+    resp = admin_client.post(_triage_url(finding_with_vulnerability), {"status": "fixed"})
+    assert resp.status_code == 200
+
+
+def test_triage_rejects_invalid_status(analyst_client, finding_with_vulnerability):
+    resp = analyst_client.post(_triage_url(finding_with_vulnerability), {"status": "bogus"})
+    assert resp.status_code == 400
+    assert not FindingTriage.objects.exists()
+
+
+def test_triage_records_audit_event(analyst_client, finding_with_vulnerability):
+    analyst_client.post(_triage_url(finding_with_vulnerability), {"status": "accepted-risk"})
+    log = AuditLog.objects.get(action="finding.triage")
+    assert log.metadata["finding_id"] == str(finding_with_vulnerability.id)
+    assert log.metadata["dedup_key"] == finding_with_vulnerability.dedup_key
+    assert log.metadata["status"] == "accepted-risk"
+
+
+def test_triage_is_idempotent_across_calls(analyst_client, finding_with_vulnerability):
+    analyst_client.post(_triage_url(finding_with_vulnerability), {"status": "fixed"})
+    analyst_client.post(_triage_url(finding_with_vulnerability), {"status": "open"})
+
+    assert FindingTriage.objects.count() == 1
+    assert FindingTriage.objects.get().status == "open"
+
+
+def test_triage_reflects_in_finding_list_triage_status(analyst_client, finding_with_vulnerability):
+    analyst_client.post(_triage_url(finding_with_vulnerability), {"status": "fixed"})
+
+    resp = analyst_client.get(reverse("scans:finding-list"))
+    assert resp.data["results"][0]["triage_status"] == "fixed"

@@ -53,6 +53,8 @@ Gerar uma secret forte:
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
+**`BYAKUGAN_SCANNING_ENABLED`** continua `False` por padrão mesmo em produção — só ative contra um alvo com autorização documentada (ver `docs/scanning-engine.md` → Política de Autorização de Alvos). Os demais valores do motor de scan (`SCAN_TASK_TIME_LIMIT`/`SCAN_TASK_SOFT_TIME_LIMIT`, `NVD_API_KEY`/`NVD_REQUEST_DELAY_SECONDS`) têm padrões seguros e só precisam ser ajustados se scans `aggressive`/`full` contra muitos hosts estiverem estourando o tempo limite do worker Celery — ver `.env.production.example`.
+
 ## 3. Subir os containers (backend + db + redis + celery)
 
 ```bash

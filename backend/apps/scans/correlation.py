@@ -9,6 +9,12 @@ Ver docs/scanning-engine.md (seção Correlation Engine) para o racional.
 As funções recebem listas de dicts (tipicamente vindas de
 ``Finding.objects.values(...)``) para evitar instanciar objetos de modelo
 desnecessariamente e para permanecerem testáveis sem banco de dados.
+
+Fase 5 (dedup/triagem): as funções aceitam ``excluded_dedup_keys`` opcional —
+um conjunto de ``Finding.dedup_key`` triados como corrigido/falso-positivo/
+risco aceito (``FindingTriage``), resolvido pelo caller (``views.py``) e
+apenas filtrado aqui. Mantém este módulo livre de I/O: quem consulta o banco
+por triagens é a view, não o motor de correlação.
 """
 
 from __future__ import annotations
@@ -16,6 +22,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from .models import FindingCategory
 
 # CVSS "equivalente" usado quando o finding não possui CVSS numérico (ex.:
 # vulnerabilidades sem CVE associado). Mantém a mesma ordem de grandeza do
@@ -33,6 +41,29 @@ SEVERITIES = ("critical", "high", "medium", "low", "info")
 # risk_score satura em 100 — evita que ambientes com muitos findings percam
 # a diferenciação entre "ruim" e "catastrófico".
 RISK_SCORE_CAP = 100.0
+
+#: Rótulo amigável (PT-BR) por categoria de finding — reaproveita os labels
+#: já declarados em ``FindingCategory`` (fonte única, sem duplicar em cada
+#: consumidor da API/frontend).
+CATEGORY_LABELS: dict[str, str] = dict(FindingCategory.choices)
+
+
+def category_label(category: str) -> str:
+    """Rótulo amigável de uma categoria — usado pela UI (heatmap/legendas).
+
+    Categorias fora do enum (ex.: dado legado de antes da Fase 0) caem no
+    próprio valor bruto, nunca quebram.
+    """
+    return CATEGORY_LABELS.get(category, category)
+
+
+def _exclude_triaged(
+    rows: list[dict[str, Any]], excluded_dedup_keys: set[str] | None
+) -> list[dict[str, Any]]:
+    """Remove de ``rows`` os findings cujo ``dedup_key`` já foi triado como resolvido."""
+    if not excluded_dedup_keys:
+        return rows
+    return [r for r in rows if r.get("dedup_key") not in excluded_dedup_keys]
 
 
 def risk_level(score: float) -> str:
@@ -74,13 +105,21 @@ class RiskAssessment:
     findings: int = 0
 
 
-def compute_risk(rows: list[dict[str, Any]]) -> RiskAssessment:
+def compute_risk(
+    rows: list[dict[str, Any]], *, excluded_dedup_keys: set[str] | None = None
+) -> RiskAssessment:
     """Calcula o risk score (0-100) e a distribuição de severidade.
 
     ``rows``: lista de dicts com ao menos ``severity`` e ``cvss``. O score é
     a soma dos pesos (CVSS real ou fallback), saturada em 100 — ou seja,
     cresce com o número e a gravidade dos findings, mas nunca "explode".
+
+    ``excluded_dedup_keys``, quando informado, remove da soma os findings
+    cujo ``dedup_key`` já foi triado como corrigido/falso-positivo/risco
+    aceito (Fase 5) — sem isso, reexecutar o mesmo scan sobre o mesmo alvo
+    infla o score aditivo a cada rodada, mesmo sem mudança real de risco.
     """
+    rows = _exclude_triaged(rows, excluded_dedup_keys)
     counts = Counter(r["severity"] for r in rows)
     raw = sum(_finding_weight(r["severity"], r.get("cvss")) for r in rows)
     score = min(RISK_SCORE_CAP, round(raw, 1))
@@ -94,15 +133,18 @@ def compute_risk(rows: list[dict[str, Any]]) -> RiskAssessment:
     )
 
 
-def compute_asset_risk(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def compute_asset_risk(
+    rows: list[dict[str, Any]], *, excluded_dedup_keys: set[str] | None = None
+) -> list[dict[str, Any]]:
     """Agrupa findings por ativo e computa o risk assessment de cada um.
 
     ``rows`` deve incluir ``asset_id`` (e, opcionalmente, campos de exibição
     do ativo como ``asset__ip``/``asset__hostname``/``asset__domain``, que são
     repassados como ``ip``/``hostname``/``domain``). Retorna ordenado por
     ``risk_score`` decrescente — a priorização automática do Correlation
-    Engine.
+    Engine. ``excluded_dedup_keys``: ver ``compute_risk``.
     """
+    rows = _exclude_triaged(rows, excluded_dedup_keys)
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     display: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -125,17 +167,28 @@ def compute_asset_risk(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return assessments
 
 
-def compute_heatmap(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def compute_heatmap(
+    rows: list[dict[str, Any]], *, excluded_dedup_keys: set[str] | None = None
+) -> list[dict[str, Any]]:
     """Agrega a contagem de findings por (categoria, severidade).
 
-    ``rows`` deve incluir ``category`` e ``severity``. Retorna uma lista plana
-    de células ``{"category", "severity", "count"}`` — o frontend faz o pivô
-    para a grade do heatmap.
+    ``rows`` deve incluir ``category`` e ``severity``. Retorna uma lista
+    plana de células ``{"category", "category_label", "severity", "count"}``
+    — o frontend faz o pivô para a grade do heatmap; ``category_label`` evita
+    duplicar o mapa categoria→rótulo em cada consumidor. Findings triados
+    como resolvidos (``excluded_dedup_keys`` — ver ``compute_risk``) não
+    entram na contagem, mantendo o heatmap consistente com o risk_score.
     """
+    rows = _exclude_triaged(rows, excluded_dedup_keys)
     counter: Counter[tuple[str, str]] = Counter()
     for row in rows:
         counter[(row["category"], row["severity"])] += 1
     return [
-        {"category": category, "severity": severity, "count": count}
+        {
+            "category": category,
+            "category_label": category_label(category),
+            "severity": severity,
+            "count": count,
+        }
         for (category, severity), count in sorted(counter.items())
     ]

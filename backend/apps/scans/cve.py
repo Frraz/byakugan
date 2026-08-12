@@ -55,6 +55,41 @@ def _best_metric(metrics: dict[str, Any]) -> tuple[float | None, str | None, str
     return None, None, Severity.INFO
 
 
+def _normalize_cpe_component(value: str) -> str:
+    """Normaliza um componente para o formato CPE 2.3 (minúsculo, sem espaços).
+
+    CPE reserva ``:`` como separador de componentes e ``/`` não é usado em
+    nomes de produto/versão reais — ambos são substituídos por ``_`` por
+    segurança, mesmo sendo raros em produto/versão detectados por banner/fingerprint.
+    """
+    normalized = value.strip().lower().replace(" ", "_")
+    for char in (":", "/"):
+        normalized = normalized.replace(char, "_")
+    return normalized
+
+
+def build_cpe_match(product: str, version: str) -> str:
+    """Constrói uma ``virtualMatchString`` CPE 2.3 para busca precisa na NVD.
+
+    Formato: ``cpe:2.3:a:*:<produto>:<versão>:*`` — vendor fica como
+    coringa (``*``): não temos como saber com certeza o vendor oficial de
+    cada produto sem manter um dicionário CPE completo (ex.: o produto
+    "http_server" tem vendor "apache", não "http_server"). O coringa deixa
+    a própria NVD casar contra qualquer vendor que produza esse par
+    produto/versão — mais preciso que ``keywordSearch`` (que casa qualquer
+    CVE cujo texto livre contenha as palavras, gerando mais falso positivo),
+    sem exigir esse mapeamento produto→vendor mantido à mão.
+
+    Args:
+        product: Nome do produto (ex.: ``"nginx"``, ``"OpenSSH"``).
+        version: Versão detectada (ex.: ``"1.24.0"``).
+
+    Returns:
+        A ``virtualMatchString`` pronta para o parâmetro de busca da NVD.
+    """
+    return f"cpe:2.3:a:*:{_normalize_cpe_component(product)}:{_normalize_cpe_component(version)}:*"
+
+
 def map_cve_item(item: dict[str, Any]) -> dict[str, Any] | None:
     """Converte um item do payload NVD (``{"cve": {...}}``) em campos de domínio.
 

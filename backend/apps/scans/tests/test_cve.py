@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from apps.scans.cve import map_cve_item, severity_bucket
+from apps.scans.cve import build_cpe_match, map_cve_item, severity_bucket
 
 NVD_ITEM_V31 = {
     "cve": {
@@ -91,3 +91,16 @@ def test_severity_bucket_score_thresholds():
     assert severity_bucket(0.1) == "low"
     assert severity_bucket(0.0) == "info"
     assert severity_bucket(None) == "info"
+
+
+def test_build_cpe_match_formats_cpe23_with_wildcard_vendor():
+    assert build_cpe_match("nginx", "1.24.0") == "cpe:2.3:a:*:nginx:1.24.0:*"
+
+
+def test_build_cpe_match_lowercases_and_strips():
+    assert build_cpe_match("  OpenSSH  ", "8.2P1") == "cpe:2.3:a:*:openssh:8.2p1:*"
+
+
+def test_build_cpe_match_normalizes_spaces_and_reserved_chars():
+    assert build_cpe_match("http server", "1.0") == "cpe:2.3:a:*:http_server:1.0:*"
+    assert build_cpe_match("foo:bar", "1/0") == "cpe:2.3:a:*:foo_bar:1_0:*"

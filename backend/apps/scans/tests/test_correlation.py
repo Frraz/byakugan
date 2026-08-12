@@ -82,6 +82,18 @@ def test_compute_heatmap_aggregates_by_category_and_severity():
         {"category": "software", "severity": "high"},
     ]
     cells = compute_heatmap(rows)
-    assert {"category": "tls", "severity": "medium", "count": 2} in cells
-    assert {"category": "software", "severity": "high", "count": 1} in cells
+    tls_cell = next(c for c in cells if c["category"] == "tls")
+    software_cell = next(c for c in cells if c["category"] == "software")
+    assert tls_cell["severity"] == "medium" and tls_cell["count"] == 2
+    assert software_cell["severity"] == "high" and software_cell["count"] == 1
     assert len(cells) == 2
+
+
+def test_compute_heatmap_includes_category_label():
+    cells = compute_heatmap([{"category": "tls", "severity": "medium"}])
+    assert cells[0]["category_label"] == "TLS"
+
+
+def test_compute_heatmap_unknown_category_falls_back_to_raw_value():
+    cells = compute_heatmap([{"category": "some-future-category", "severity": "low"}])
+    assert cells[0]["category_label"] == "some-future-category"

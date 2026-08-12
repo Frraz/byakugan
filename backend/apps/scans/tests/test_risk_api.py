@@ -6,13 +6,22 @@ import pytest
 from django.urls import reverse
 
 from apps.assets.models import Asset
-from apps.scans.models import Finding, Vulnerability
+from apps.scans.models import Finding, FindingTriage, Vulnerability
 from apps.scans.tests.factories import ScanFactory
 
 pytestmark = pytest.mark.django_db
 
 
-def _finding(asset, scan, *, severity="high", cvss=7.5, category="software", cve="CVE-2024-0001"):
+def _finding(
+    asset,
+    scan,
+    *,
+    severity="high",
+    cvss=7.5,
+    category="software",
+    cve="CVE-2024-0001",
+    dedup_key="",
+):
     vulnerability = Vulnerability.objects.create(
         cve=cve, title=f"{cve}", severity=severity, cvss_score=cvss, description="d"
     )
@@ -27,6 +36,7 @@ def _finding(asset, scan, *, severity="high", cvss=7.5, category="software", cve
         description="d",
         evidence="e",
         recommendation="r",
+        dedup_key=dedup_key,
     )
 
 
@@ -83,4 +93,71 @@ def test_risk_overview_heatmap_groups_by_category(viewer_client):
 
     resp = viewer_client.get(reverse("scans:risk-overview"))
 
-    assert resp.data["heatmap"] == [{"category": "tls", "severity": "medium", "count": 2}]
+    assert len(resp.data["heatmap"]) == 1
+    cell = resp.data["heatmap"][0]
+    assert cell["category"] == "tls"
+    assert cell["severity"] == "medium"
+    assert cell["count"] == 2
+    assert cell["category_label"] == "TLS"
+
+
+# --- Triagem exclui achados resolvidos da soma do risk_score (Fase 5) --------
+
+
+def test_risk_overview_excludes_resolved_triage_from_score(viewer_client):
+    scan = ScanFactory()
+    asset = Asset.objects.create(ip="192.168.0.10")
+    _finding(asset, scan, severity="high", cvss=7.5, cve="CVE-2024-2000", dedup_key="dk-1")
+
+    resp_before = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp_before.data["summary"]["findings"] == 1
+    assert resp_before.data["summary"]["risk_score"] > 0
+
+    FindingTriage.objects.create(dedup_key="dk-1", asset=asset, status="false-positive")
+
+    resp_after = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp_after.data["summary"]["findings"] == 0
+    assert resp_after.data["summary"]["risk_score"] == 0
+    assert resp_after.data["top_assets"] == []
+    assert resp_after.data["heatmap"] == []
+
+
+def test_risk_overview_keeps_open_triage_in_score(viewer_client):
+    scan = ScanFactory()
+    asset = Asset.objects.create(ip="192.168.0.10")
+    _finding(asset, scan, severity="high", cvss=7.5, cve="CVE-2024-2001", dedup_key="dk-2")
+    FindingTriage.objects.create(dedup_key="dk-2", asset=asset, status="open")
+
+    resp = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp.data["summary"]["findings"] == 1
+    assert resp.data["summary"]["risk_score"] > 0
+
+
+def test_risk_overview_reruns_only_inflate_score_until_triaged(viewer_client):
+    """Reproduz o bug do score aditivo: 3 reexecuções somam 3x até a triagem excluir."""
+    scan1, scan2, scan3 = ScanFactory(), ScanFactory(), ScanFactory()
+    asset = Asset.objects.create(ip="192.168.0.10")
+    for scan in (scan1, scan2, scan3):
+        _finding(asset, scan, severity="high", cvss=7.5, cve="CVE-2024-2002", dedup_key="dk-3")
+
+    resp_before = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp_before.data["summary"]["findings"] == 3
+
+    FindingTriage.objects.create(dedup_key="dk-3", asset=asset, status="fixed")
+
+    resp_after = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp_after.data["summary"]["findings"] == 0
+    assert resp_after.data["summary"]["risk_score"] == 0
+
+
+def test_risk_overview_excludes_only_the_triaged_dedup_key(viewer_client):
+    scan = ScanFactory()
+    asset = Asset.objects.create(ip="192.168.0.10")
+    _finding(asset, scan, severity="high", cvss=7.5, cve="CVE-2024-2003", dedup_key="dk-fixed")
+    _finding(asset, scan, severity="medium", cvss=5.0, cve="CVE-2024-2004", dedup_key="dk-open")
+    FindingTriage.objects.create(dedup_key="dk-fixed", asset=asset, status="accepted-risk")
+
+    resp = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp.data["summary"]["findings"] == 1
+    assert resp.data["summary"]["severity"]["medium"] == 1
+    assert resp.data["summary"]["severity"]["high"] == 0

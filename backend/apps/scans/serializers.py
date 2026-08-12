@@ -7,7 +7,7 @@ from typing import Any
 from django.db.models import Count
 from rest_framework import serializers
 
-from .models import Finding, Scan, Severity, Target, Vulnerability
+from .models import Finding, FindingTriage, Scan, Severity, Target, Vulnerability
 from .validators import InvalidTarget, classify_target
 
 
@@ -100,6 +100,7 @@ class FindingSerializer(serializers.ModelSerializer):
     scan = ScanSummarySerializer(read_only=True)
     asset = AssetSummarySerializer(read_only=True)
     vulnerability = VulnerabilitySerializer(read_only=True)
+    triage_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Finding
@@ -115,9 +116,50 @@ class FindingSerializer(serializers.ModelSerializer):
             "description",
             "evidence",
             "recommendation",
+            "dedup_key",
+            "triage_status",
             "created_at",
         )
         read_only_fields = fields
+
+    def get_triage_status(self, obj: Finding) -> str:
+        """Status de triagem do achado lógico (por dedup_key) — annotation da view ou fallback."""
+        annotated = getattr(obj, "triage_status", None)
+        if annotated is not None:
+            return annotated
+        status = (
+            FindingTriage.objects.filter(dedup_key=obj.dedup_key)
+            .values_list("status", flat=True)
+            .first()
+        )
+        return status or FindingTriage.Status.OPEN
+
+
+class FindingTriageSerializer(serializers.ModelSerializer):
+    """Estado de triagem de um achado lógico (Fase 5 — toda mudança é auditada, RN011)."""
+
+    updated_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = FindingTriage
+        fields = (
+            "id",
+            "dedup_key",
+            "asset",
+            "status",
+            "note",
+            "updated_by",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class FindingTriageInputSerializer(serializers.Serializer):
+    """Entrada para triar um finding: ``POST /findings/{id}/triage/``."""
+
+    status = serializers.ChoiceField(choices=FindingTriage.Status.choices)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class ScanSerializer(serializers.ModelSerializer):
@@ -139,6 +181,9 @@ class ScanSerializer(serializers.ModelSerializer):
             "status",
             "authorized_by",
             "authorization_scope",
+            "options",
+            "progress",
+            "phase",
             "started_at",
             "finished_at",
             "failure_reason",
@@ -185,6 +230,7 @@ class ScanCreateSerializer(serializers.Serializer):
     target = serializers.CharField(required=False, allow_blank=True)
     authorized_by = serializers.CharField(required=False, allow_blank=True)
     authorization_scope = serializers.CharField(required=False, allow_blank=True)
+    options = serializers.JSONField(required=False, allow_null=True)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         if not attrs.get("target_ref") and not attrs.get("target"):

@@ -158,6 +158,13 @@ CELERY_TASK_TRACK_STARTED = True
 # Execução síncrona (sem worker) — útil em testes; nunca ligar em produção.
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 
+# Limites de execução de scans.run_scan — evita que um worker fique preso
+# indefinidamente num scan travado (motor ofensivo pode varrer múltiplos
+# hosts × muitos adapters). SOFT dá chance de um encerramento limpo (exceção
+# capturável) antes do HARD matar a task.
+SCAN_TASK_TIME_LIMIT = env.int("SCAN_TASK_TIME_LIMIT", default=1800)
+SCAN_TASK_SOFT_TIME_LIMIT = env.int("SCAN_TASK_SOFT_TIME_LIMIT", default=1700)
+
 # --- CORS ---
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:5173"])
 

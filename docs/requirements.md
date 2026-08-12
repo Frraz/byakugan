@@ -19,6 +19,17 @@
 | RF013 | Dashboard técnico | Visão detalhada para analistas | Dashboard |
 | RF014 | Base de conhecimento | Consultar descrição/impacto/correção de vulnerabilidades | Knowledge Base |
 | RF015 | Recomendações de correção | Sugerir remediação (Knowledge Base + IA) | AI Assistant |
+| RF016 | Perfis de intensidade | Configurar profundidade do scan (`safe`/`normal`/`aggressive`), conjunto de portas, tamanho de wordlist e checks habilitados por execução | Motor Ofensivo |
+| RF017 | Progresso do scan | Acompanhar `progress` (0–100) e `phase` (adapter/host atual) de um scan em execução; cancelamento cooperativo | Motor Ofensivo |
+| RF018 | Varredura de serviços de rede | Banner grabbing (TCP) e probes UDP leves (DNS/NTP/SNMP/NetBIOS/mDNS) para até 1000 portas, com produto/versão quando identificável | Motor Ofensivo |
+| RF019 | Teste de credenciais default | Testar credenciais padrão/sem autenticação em serviços descobertos (FTP anônimo, Redis, Elasticsearch, painéis HTTP), restrito à intensidade `aggressive` | Motor Ofensivo |
+| RF020 | Análise de TLS/certificado | Detectar protocolos/ciphers obsoletos e problemas de certificado (expirado, self-signed, hostname mismatch, chave/assinatura fracas) | Motor Ofensivo |
+| RF021 | Enumeração de subdomínios | Descobrir subdomínios via wordlist e Certificate Transparency (crt.sh), com revalidação de escopo por candidato | Motor Ofensivo |
+| RF022 | Transferência de zona (AXFR) | Testar e reportar transferência de zona DNS mal configurada | Motor Ofensivo |
+| RF023 | Segurança de e-mail | Analisar SPF/DMARC/DKIM do domínio | Motor Ofensivo |
+| RF024 | Testes ativos em aplicação web | Crawling same-origin e detecção não-destrutiva de headers de segurança ausentes, cookies inseguros, CORS mal configurado, exposição de arquivos sensíveis, métodos HTTP perigosos (TRACE) e injeção (XSS/SQLi/traversal/SSTI/cmdi/open redirect) | Motor Ofensivo |
+| RF025 | Correlação CVE por CPE | Buscar CVEs na NVD por `virtualMatchString` (CPE 2.3), com fallback para busca por palavra-chave | Motor Ofensivo |
+| RF026 | Triagem de achados | Classificar um achado lógico como aberto/corrigido/falso-positivo/risco aceito, excluindo-o do risk score enquanto resolvido | Motor Ofensivo |
 
 ## Requisitos Não Funcionais (RNF)
 

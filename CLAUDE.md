@@ -6,11 +6,11 @@
 
 ## 1. O que é o Byakugan
 
-**Byakugan** é uma **plataforma defensiva de Security Assessment**: uma camada de orquestração que centraliza descoberta de ativos, fingerprinting, gestão de vulnerabilidades, correlação de risco, relatórios executivos/técnicos e um assistente de IA.
+**Byakugan** é uma **plataforma ofensiva de Security Assessment / pentest profissional autorizado**: uma camada de orquestração que centraliza descoberta de ativos, fingerprinting, testes ativos de vulnerabilidade, correlação de risco, relatórios executivos/técnicos e um assistente de IA.
 
-O objetivo é **descomplicar** o trabalho de equipes SOC, Blue Team, DevSecOps e analistas de segurança, reunindo em uma única interface o que hoje exige dezenas de ferramentas separadas (nmap, Burp/ZAP, OpenVAS/Nessus, sqlmap, etc.).
+O objetivo é **descomplicar** o trabalho de equipes de pentest, Red Team, SOC, Blue Team, DevSecOps e analistas de segurança, reunindo em uma única interface a **cobertura máxima possível** de descoberta e detecção de vulnerabilidades — o que hoje exige dezenas de ferramentas separadas (nmap, Burp/ZAP, OpenVAS/Nessus, sqlmap, etc.) — sem depender de binários externos (motor 100% pure-Python).
 
-> **Posicionamento**: o Byakugan **não** é uma ferramenta de exploração ofensiva automática. Ele é uma plataforma de **descoberta de ativos, análise de exposição, gestão de vulnerabilidades e apoio à remediação**. Esse enquadramento é intencional — é mais valioso, mais defensável perante a banca da FIAP e tecnicamente mais viável.
+> **Posicionamento**: o Byakugan **é** uma ferramenta ofensiva — executa testes ativos de vulnerabilidade (credenciais default, injeção, exposição de arquivos, etc.) — mas **nunca explora**: todo teste é **detecção não-destrutiva** (prova a vulnerabilidade sem alterar, apagar ou indisponibilizar dados/serviços do alvo) e só roda contra alvos com **autorização explícita, documentada e não-expirada**. Esse enquadramento — ofensivo, porém seguro e legal por design — é o que torna a ferramenta defensável perante a banca da FIAP e utilizável em um pentest real. Ver `docs/scanning-engine.md` para os guardrails técnicos.
 
 Projeto acadêmico do curso de **Segurança Cibernética da FIAP**.
 
@@ -21,10 +21,15 @@ Inspirado no dōjutsu Byakugan (Naruto): "enxergar tudo ao redor e revelar o que
 
 ## 2. ⚠️ Uso autorizado apenas (regra inegociável)
 
-O Byakugan varre serviços e sistemas reais. **Só pode ser usado contra alvos para os quais exista autorização explícita e documentada** (ambiente próprio, laboratório, ou contrato de pentest/consultoria).
+O Byakugan varre serviços e sistemas reais, incluindo testes ativos. **Só pode ser usado contra alvos para os quais exista autorização explícita e documentada** (ambiente próprio, laboratório, ou contrato de pentest/consultoria).
 
 - Todo scan deve registrar quem autorizou e o escopo permitido (ver `docs/scanning-engine.md` → Política de Autorização de Alvos).
-- Nenhuma funcionalidade deve facilitar uso não autorizado, evasão de detecção para fins maliciosos, ou ataque a terceiros.
+- **Kill-switch global** (`BYAKUGAN_SCANNING_ENABLED`, default `False`): sem ele ativo, nenhuma varredura real executa — o scan falha de forma controlada e auditada.
+- **Escopo fail-closed**: todo alvo — inclusive hosts expandidos de um CIDR ou lista — é revalidado contra o `authorization_scope` antes de qualquer probe. Nada fora do escopo é tocado, mesmo que faça parte do alvo original.
+- **Expiração de autorização enforçada** (`authorization_expires_at`): reavaliada a cada tentativa de scan, não só no cadastro do alvo.
+- **Testes ativos são sempre detecção, nunca exploração**: não-destrutivos, idempotentes (GET/OPTIONS/TRACE — nunca escrita ativa), com marcadores inertes em vez de payloads vivos, e testes time-based limitados a uma única requisição curta em intensidade `aggressive`.
+- **Auditoria** de todo evento sensível (criação/cancelamento de scan, triagem de achados, exportação, exclusão).
+- Nenhuma funcionalidade deve facilitar uso não autorizado, evasão de detecção para fins maliciosos, DoS, ou ataque a terceiros.
 - Varredura sem autorização é crime. Isto vale para o desenvolvimento, testes e demonstrações.
 
 ---
@@ -32,11 +37,11 @@ O Byakugan varre serviços e sistemas reais. **Só pode ser usado contra alvos p
 ## 3. Objetivos do sistema
 
 O sistema deve:
-1. Descobrir ativos de rede (hosts, sub-redes, DNS, subdomínios).
-2. Identificar tecnologias utilizadas (fingerprinting de OS, servidores, frameworks).
-3. Avaliar exposição de serviços (portas, protocolos, headers, TLS).
-4. Detectar vulnerabilidades conhecidas (correlação com base CVE/CVSS).
-5. Correlacionar riscos e priorizar correções.
+1. Descobrir ativos de rede (hosts, sub-redes, DNS, subdomínios, transferência de zona).
+2. Identificar tecnologias utilizadas (fingerprinting de OS, servidores, frameworks, TLS/certificado).
+3. Avaliar exposição de serviços (portas, protocolos, headers, cookies, CORS, credenciais default).
+4. Detectar vulnerabilidades conhecidas e ativas, de forma não-destrutiva (CVE/CVSS via CPE, injeção, exposição de arquivos).
+5. Correlacionar riscos, deduplicar/triar achados entre execuções e priorizar correções.
 6. Gerar relatórios executivos e técnicos.
 7. Auxiliar na remediação (Knowledge Base + IA assistente).
 8. Manter histórico imutável de análises para auditoria.

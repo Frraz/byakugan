@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Asset, Service, Technology
+from .models import Asset, DnsRecord, Service, Technology
 
 
 class TechnologySerializer(serializers.ModelSerializer):
@@ -44,6 +44,15 @@ class ServiceSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class DnsRecordSerializer(serializers.ModelSerializer):
+    """Registro DNS não-A/AAAA descoberto de um domínio (Fase 3)."""
+
+    class Meta:
+        model = DnsRecord
+        fields = ("id", "asset", "domain", "record_type", "value", "created_at")
+        read_only_fields = fields
+
+
 class AssetSerializer(serializers.ModelSerializer):
     """Ativo do inventário (visão de lista)."""
 
@@ -54,11 +63,12 @@ class AssetSerializer(serializers.ModelSerializer):
 
 
 class AssetDetailSerializer(AssetSerializer):
-    """Ativo com serviços e tecnologias aninhados (visão de detalhe)."""
+    """Ativo com serviços, tecnologias e registros DNS aninhados (visão de detalhe)."""
 
     services = ServiceSerializer(many=True, read_only=True)
     technologies = TechnologySerializer(many=True, read_only=True)
+    dns_records = DnsRecordSerializer(many=True, read_only=True)
 
     class Meta(AssetSerializer.Meta):
-        fields = (*AssetSerializer.Meta.fields, "services", "technologies")
+        fields = (*AssetSerializer.Meta.fields, "services", "technologies", "dns_records")
         read_only_fields = fields

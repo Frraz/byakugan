@@ -84,3 +84,35 @@ class Technology(BaseModel):
     def __str__(self) -> str:
         label = f"{self.name} {self.version}".strip()
         return f"{label} [{self.category}]"
+
+
+class DnsRecord(BaseModel):
+    """Registro DNS não-A/AAAA descoberto de um domínio (Fase 3 — DNS).
+
+    Registros A/AAAA já viram o próprio ``Asset`` (``kind="host"`` em
+    ``DnsAdapter``/``SubdomainAdapter``); os demais tipos (MX/NS/TXT/...) não
+    representam um host novo, mas são evidência relevante do ambiente — ex.:
+    SPF/DMARC em TXT, ou registros vazados por um AXFR mal configurado
+    (``ZoneTransferAdapter``). Antes desta fase eram descartados no parser.
+    """
+
+    class RecordType(models.TextChoices):
+        MX = "MX", "MX"
+        NS = "NS", "NS"
+        TXT = "TXT", "TXT"
+        SOA = "SOA", "SOA"
+        SRV = "SRV", "SRV"
+        CNAME = "CNAME", "CNAME"
+        CAA = "CAA", "CAA"
+        PTR = "PTR", "PTR"
+
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="dns_records")
+    domain = models.CharField(max_length=255)
+    record_type = models.CharField(max_length=10, choices=RecordType.choices)
+    value = models.TextField()
+
+    class Meta(BaseModel.Meta):
+        unique_together = ("asset", "record_type", "value")
+
+    def __str__(self) -> str:
+        return f"{self.domain} {self.record_type} {self.value[:50]}"

@@ -21,6 +21,7 @@ function intensity(count: number, max: number): number {
 
 export function CategoryHeatmap({ cells }: { cells: HeatmapCell[] }) {
   const categories = Array.from(new Set(cells.map((c) => c.category))).sort();
+  const labels = new Map(cells.map((c) => [c.category, c.category_label]));
   const lookup = new Map(cells.map((c) => [`${c.category}|${c.severity}`, c.count]));
   const max = cells.reduce((m, c) => Math.max(m, c.count), 0);
 
@@ -53,7 +54,7 @@ export function CategoryHeatmap({ cells }: { cells: HeatmapCell[] }) {
         <tbody>
           {categories.map((category) => (
             <tr key={category}>
-              <td className="p-2 font-medium capitalize text-foreground">{category}</td>
+              <td className="p-2 font-medium text-foreground">{labels.get(category) ?? category}</td>
               {SEVERITY_ORDER.map((sev) => {
                 const count = lookup.get(`${category}|${sev}`) ?? 0;
                 return (
@@ -77,7 +78,7 @@ export function CategoryHeatmap({ cells }: { cells: HeatmapCell[] }) {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {category} · {SEVERITY_LABELS[sev]}: {count}
+                        {labels.get(category) ?? category} · {SEVERITY_LABELS[sev]}: {count}
                       </TooltipContent>
                     </Tooltip>
                   </td>

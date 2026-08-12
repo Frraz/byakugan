@@ -8,7 +8,9 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
 import { ScanDeleteDialog } from "@/components/scans/ScanDeleteDialog";
+import { ScanProgress } from "@/components/scans/ScanProgress";
 import { Button } from "@/components/ui/button";
+import { CategoryBadge } from "@/components/ui/category-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
@@ -142,6 +144,13 @@ export function ScanDetailPage() {
               </span>
             </p>
           )}
+          {isActive && (
+            <ScanProgress
+              progress={s.progress}
+              phase={s.phase}
+              className="border-t border-border pt-3"
+            />
+          )}
         </GlassPanel>
 
         {/* Resumo de severidade */}
@@ -207,7 +216,9 @@ export function ScanDetailPage() {
                       <TableCell className="font-mono text-muted-foreground">
                         {f.cvss ?? "—"}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{f.category}</TableCell>
+                      <TableCell>
+                        <CategoryBadge category={f.category} />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

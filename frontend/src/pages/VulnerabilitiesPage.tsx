@@ -5,6 +5,7 @@ import { ExternalLink, Search, ShieldAlert } from "lucide-react";
 
 import { PageHeader } from "@/components/PageHeader";
 import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
+import { CategoryBadge } from "@/components/ui/category-badge";
 import { DataPagination } from "@/components/ui/data-pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
@@ -152,7 +153,7 @@ function FindingsTab() {
                   <TableRow key={f.id} className="cursor-pointer" onClick={() => setSelected(f)}>
                     <TableCell className="max-w-md">
                       <p className="font-medium text-foreground">{f.title}</p>
-                      <p className="text-xs text-muted-foreground">{f.category}</p>
+                      <CategoryBadge category={f.category} className="mt-1" />
                     </TableCell>
                     <TableCell>
                       <SeverityBadge severity={f.severity} />

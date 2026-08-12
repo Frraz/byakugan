@@ -13,6 +13,7 @@ from .models import Asset
 from .serializers import (
     AssetDetailSerializer,
     AssetSerializer,
+    DnsRecordSerializer,
     ServiceSerializer,
     TechnologySerializer,
 )
@@ -47,4 +48,11 @@ class AssetViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Ge
         """Lista as tecnologias identificadas no ativo (technology profile)."""
         asset = self.get_object()
         serializer = TechnologySerializer(asset.technologies.all(), many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="dns-records")
+    def dns_records(self, request: Request, pk: str | None = None) -> Response:
+        """Lista os registros DNS não-A/AAAA descobertos para o ativo (Fase 3)."""
+        asset = self.get_object()
+        serializer = DnsRecordSerializer(asset.dns_records.all(), many=True)
         return Response(serializer.data)
