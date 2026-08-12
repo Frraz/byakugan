@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from django.db.models import Count, Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -18,7 +19,7 @@ from apps.core.audit import client_ip, record_audit
 from apps.core.permissions import IsAnalystOrAdmin, ReadOnlyOrAnalyst
 
 from .correlation import compute_asset_risk, compute_heatmap, compute_risk
-from .models import Finding, Scan, Target, Vulnerability
+from .models import Finding, Scan, Severity, Target, Vulnerability
 from .serializers import (
     FindingSerializer,
     ScanCreateSerializer,
@@ -26,7 +27,13 @@ from .serializers import (
     TargetSerializer,
     VulnerabilitySerializer,
 )
-from .services import InvalidTransition, TargetOutOfScope, cancel_scan, create_scan
+from .services import (
+    InvalidTransition,
+    TargetOutOfScope,
+    cancel_scan,
+    create_scan,
+    delete_scan,
+)
 from .tasks import run_scan
 from .validators import InvalidTarget
 
@@ -43,10 +50,25 @@ class TargetViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "value"]
     ordering_fields = ["created_at", "name"]
 
+    def get_queryset(self):
+        # annotate() com agregação descarta o Meta.ordering — reaplicar.
+        return Target.objects.annotate(scans_count=Count("scans")).order_by("-created_at")
+
     def perform_create(self, serializer: TargetSerializer) -> None:
         target = serializer.save()
         record_audit(
             "target.create",
+            user=self.request.user,
+            severity="info",
+            source=client_ip(self.request),
+            target_id=str(target.id),
+            value=target.value,
+        )
+
+    def perform_update(self, serializer: TargetSerializer) -> None:
+        target = serializer.save()
+        record_audit(
+            "target.update",
             user=self.request.user,
             severity="info",
             source=client_ip(self.request),
@@ -72,7 +94,20 @@ class ScanViewSet(viewsets.ModelViewSet):
     queryset = Scan.objects.all()
     http_method_names = ["get", "post", "delete", "head", "options"]
     filterset_fields = ["status", "scan_type"]
+    search_fields = ["target"]
     ordering_fields = ["created_at", "status"]
+
+    def get_queryset(self):
+        severity_annotations = {
+            f"sev_{severity}": Count("findings", filter=Q(findings__severity=severity))
+            for severity in Severity.values
+        }
+        # annotate() com agregação descarta o Meta.ordering — reaplicar.
+        return (
+            Scan.objects.select_related("target_ref")
+            .annotate(findings_total=Count("findings"), **severity_annotations)
+            .order_by("-created_at")
+        )
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -83,6 +118,20 @@ class ScanViewSet(viewsets.ModelViewSet):
         if self.action in {"create", "cancel"}:
             return [IsAnalystOrAdmin()]
         return [ReadOnlyOrAnalyst()]
+
+    def perform_destroy(self, instance: Scan) -> None:
+        scan_id, target = str(instance.id), instance.target
+        deleted = delete_scan(instance)  # RN014 — 409 se pending/running
+        record_audit(
+            "scan.delete",
+            user=self.request.user,
+            severity="warning",
+            source=client_ip(self.request),
+            scan_id=scan_id,
+            target=target,
+            findings_deleted=deleted["findings"],
+            reports_deleted=deleted["reports"],
+        )
 
     def create(self, request: Request, *args, **kwargs) -> Response:
         serializer = ScanCreateSerializer(data=request.data)
@@ -143,7 +192,8 @@ class ScanViewSet(viewsets.ModelViewSet):
     def findings(self, request: Request, pk: str | None = None) -> Response:
         """Lista os findings produzidos pelo scan."""
         scan = self.get_object()
-        serializer = FindingSerializer(scan.findings.all(), many=True)
+        findings = scan.findings.select_related("scan", "asset", "vulnerability")
+        serializer = FindingSerializer(findings, many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=["get"])
@@ -173,10 +223,11 @@ class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
 class FindingViewSet(viewsets.ReadOnlyModelViewSet):
     """Findings do ambiente — somente leitura (RF008)."""
 
-    queryset = Finding.objects.all()
+    queryset = Finding.objects.select_related("scan", "asset", "vulnerability")
     serializer_class = FindingSerializer
     permission_classes = [ReadOnlyOrAnalyst]
-    filterset_fields = ["severity", "asset", "scan"]
+    filterset_fields = ["severity", "asset", "scan", "category"]
+    search_fields = ["title", "category", "vulnerability__cve"]
     ordering_fields = ["created_at", "severity", "cvss"]
 
 

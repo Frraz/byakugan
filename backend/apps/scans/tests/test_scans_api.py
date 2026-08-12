@@ -1,11 +1,12 @@
-"""Testes de integração da API de Targets e Scans (RBAC, RN002, RN007)."""
+"""Testes de integração da API de Targets e Scans (RBAC, RN002, RN007, RN014)."""
 
 from __future__ import annotations
 
 import pytest
 from django.urls import reverse
 
-from apps.scans.models import Scan
+from apps.core.models import AuditLog
+from apps.scans.models import Finding, Scan
 from apps.scans.tests.factories import ScanFactory, TargetFactory
 
 pytestmark = pytest.mark.django_db
@@ -63,6 +64,37 @@ def test_only_admin_can_delete_target(analyst_client, admin_client):
     url = reverse("scans:target-detail", args=[target.id])
     assert analyst_client.delete(url).status_code == 403
     assert admin_client.delete(url).status_code == 204
+
+
+def test_patch_target_recalculates_kind_and_audits(analyst_client):
+    target = TargetFactory(value="empresa.com", kind="domain", authorization_scope="empresa.com")
+    resp = analyst_client.patch(
+        reverse("scans:target-detail", args=[target.id]),
+        {"value": "10.0.0.0/24"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.data["kind"] == "cidr"
+    assert AuditLog.objects.filter(action="target.update").exists()
+
+
+def test_target_list_exposes_scans_count(viewer_client):
+    target = TargetFactory()
+    ScanFactory(target_ref=target)
+    ScanFactory(target_ref=target)
+    resp = viewer_client.get(reverse("scans:target-list"))
+    assert resp.status_code == 200
+    row = next(r for r in resp.data["results"] if r["id"] == str(target.id))
+    assert row["scans_count"] == 2
+
+
+def test_delete_target_preserves_scans(admin_client):
+    target = TargetFactory()
+    scan = ScanFactory(target_ref=target, status=Scan.Status.COMPLETED)
+    resp = admin_client.delete(reverse("scans:target-detail", args=[target.id]))
+    assert resp.status_code == 204
+    scan.refresh_from_db()
+    assert scan.target_ref is None
 
 
 # --- Scans ---
@@ -142,3 +174,67 @@ def test_cancel_scan(analyst_client):
     resp = analyst_client.post(reverse("scans:scan-cancel", args=[scan.id]))
     assert resp.status_code == 200
     assert resp.data["status"] == "cancelled"
+
+
+def test_scan_list_includes_findings_summary(viewer_client):
+    from apps.reports.tests.factories import make_completed_scan_with_findings
+
+    scan = make_completed_scan_with_findings()
+    resp = viewer_client.get(reverse("scans:scan-list"))
+    assert resp.status_code == 200
+    row = next(r for r in resp.data["results"] if r["id"] == str(scan.id))
+    assert row["findings_count"] == 1
+    assert row["severity_counts"]["high"] == 1
+    assert row["severity_counts"]["critical"] == 0
+    assert row["target_name"] is None  # scan inline, sem target cadastrado
+
+
+def test_scan_list_includes_target_name(viewer_client):
+    target = TargetFactory(name="DMZ Lab")
+    ScanFactory(target_ref=target)
+    resp = viewer_client.get(reverse("scans:scan-list"))
+    assert resp.data["results"][0]["target_name"] == "DMZ Lab"
+
+
+# --- Scan delete (RN014) ---
+
+
+def test_admin_deletes_scan_cascading_findings_and_reports(
+    admin_client, admin_user, settings, tmp_path
+):
+    from apps.reports.models import Report
+    from apps.reports.services import generate_report, report_file_path
+    from apps.reports.tests.factories import make_completed_scan_with_findings
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    scan = make_completed_scan_with_findings()
+    report = generate_report(
+        scan=scan, report_type="technical", format="json", created_by=admin_user
+    )
+    artifact = report_file_path(report)
+    assert artifact.exists()
+
+    resp = admin_client.delete(reverse("scans:scan-detail", args=[scan.id]))
+
+    assert resp.status_code == 204
+    assert not Scan.objects.filter(id=scan.id).exists()
+    assert not Finding.objects.filter(scan_id=scan.id).exists()
+    assert not Report.objects.filter(scan_id=scan.id).exists()
+    assert not artifact.exists()
+    log = AuditLog.objects.get(action="scan.delete")
+    assert log.metadata["findings_deleted"] == 1
+    assert log.metadata["reports_deleted"] == 1
+
+
+@pytest.mark.parametrize("status_", [Scan.Status.PENDING, Scan.Status.RUNNING])
+def test_delete_active_scan_returns_409(admin_client, status_):
+    scan = ScanFactory(status=status_)
+    resp = admin_client.delete(reverse("scans:scan-detail", args=[scan.id]))
+    assert resp.status_code == 409
+    assert Scan.objects.filter(id=scan.id).exists()
+
+
+def test_analyst_cannot_delete_scan(analyst_client):
+    scan = ScanFactory(status=Scan.Status.COMPLETED)
+    resp = analyst_client.delete(reverse("scans:scan-detail", args=[scan.id]))
+    assert resp.status_code == 403

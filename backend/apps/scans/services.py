@@ -109,3 +109,33 @@ def create_scan(
 def cancel_scan(scan: Scan) -> Scan:
     """Cancela um scan pendente/em execução (RN010)."""
     return transition(scan, Scan.Status.CANCELLED, reason="Cancelado pelo usuário.")
+
+
+def delete_scan(scan: Scan) -> dict[str, int]:
+    """Exclui um scan em cascata: findings, relatórios e artefatos em disco (RN014).
+
+    As FKs ``Finding.scan`` e ``Report.scan`` permanecem ``PROTECT`` no schema —
+    a cascata só acontece por este fluxo administrativo explícito e auditado,
+    preservando a rede de segurança contra deleções acidentais (RN003/RN006).
+
+    Returns:
+        Contagens do que foi removido: ``{"findings": n, "reports": m}``.
+
+    Raises:
+        Conflict: Se o scan estiver ``pending``/``running`` (cancele antes — 409).
+    """
+    # Import tardio: apps.reports importa apps.scans; evita ciclo de módulos.
+    from apps.reports.services import report_file_path
+
+    if scan.status in ACTIVE_STATUSES:
+        raise Conflict("Cancele o scan antes de excluí-lo.")
+
+    with transaction.atomic():
+        reports = list(scan.reports.all())
+        for report in reports:
+            report_file_path(report).unlink(missing_ok=True)
+        scan.reports.all().delete()
+        findings_deleted, _ = scan.findings.all().delete()
+        scan.delete()
+
+    return {"findings": findings_deleted, "reports": len(reports)}

@@ -100,3 +100,35 @@ def test_filter_findings_by_severity_excludes_mismatch(viewer_client, finding_wi
     resp = viewer_client.get(reverse("scans:finding-list"), {"severity": "low"})
     assert resp.status_code == 200
     assert resp.data["count"] == 0
+
+
+def test_finding_payload_nests_vulnerability_asset_and_scan(
+    viewer_client, finding_with_vulnerability
+):
+    resp = viewer_client.get(reverse("scans:finding-list"))
+    row = resp.data["results"][0]
+    assert row["vulnerability"]["cve"] == "CVE-2024-1111"
+    assert row["vulnerability"]["references"] == ["https://example.com/cve"]
+    assert row["asset"]["hostname"] == "web01"
+    assert row["asset"]["ip"] == "192.168.0.10"
+    assert row["scan"]["id"] == str(finding_with_vulnerability.scan_id)
+    assert row["scan"]["target"] == finding_with_vulnerability.scan.target
+
+
+def test_filter_findings_by_category(viewer_client, finding_with_vulnerability):
+    assert (
+        viewer_client.get(reverse("scans:finding-list"), {"category": "software"}).data["count"]
+        == 1
+    )
+    assert (
+        viewer_client.get(reverse("scans:finding-list"), {"category": "network"}).data["count"] == 0
+    )
+
+
+def test_search_findings_by_title_and_cve(viewer_client, finding_with_vulnerability):
+    assert viewer_client.get(reverse("scans:finding-list"), {"search": "nginx"}).data["count"] == 1
+    assert (
+        viewer_client.get(reverse("scans:finding-list"), {"search": "CVE-2024-1111"}).data["count"]
+        == 1
+    )
+    assert viewer_client.get(reverse("scans:finding-list"), {"search": "xyz"}).data["count"] == 0
