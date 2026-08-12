@@ -43,8 +43,9 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 | 2 | Fingerprinting (servidores, frameworks, CMS, TLS, technology profile) | ✅ Concluída |
 | 3 | Vulnerability Assessment (CVE/NVD, CVSS, findings) | ✅ Concluída |
 | 4 | Correlation Engine (risk score, priorização, heatmaps) | ✅ Concluída |
-| 5 | Reporting (PDF/CSV/JSON) | ✅ Concluída |
+| 5 | Reporting (PDF profissional / CSV / JSON) | ✅ Concluída |
 | 6 | Knowledge Base | ✅ Concluída |
+| — | Overhaul de UI/UX (design system shadcn/ui, CRUD de targets, exclusão de scans, relatórios profissionais) | ✅ Concluída |
 | 7 | AI Assistant | ⏳ Planejada |
 
 Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para o detalhamento.
@@ -59,9 +60,10 @@ Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para
 - **Inventário de ativos** — hosts, serviços e tecnologias descobertos (*technology profile*: SO, servidor web, framework, linguagem, CMS, frontend, TLS), com histórico imutável.
 - **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan, com evidência e recomendação (RN008); pipeline em duas fases garante que a correlação de CVEs sempre leia o profile mais recente do próprio scan.
 - **Correlation Engine** — risk score (0–100) e priorização automática de ativos, agrupamento por criticidade e heatmap por categoria, computados sob demanda a partir dos findings (sem cache a invalidar — sempre atualizado).
-- **Reporting** — relatórios executivo (risco + top riscos + heatmap) e técnico (inventário + findings completos) em PDF (`reportlab`), CSV e JSON, gerados só a partir de scans concluídos (RN012); download autenticado e auditado (RN011); histórico imutável (RN003).
+- **Reporting** — relatórios executivo (risco + top riscos + heatmap) e técnico (inventário + findings completos) em PDF profissional (`reportlab`: capa com identidade, gráficos de severidade/categoria, numeração de páginas, sumário narrativo e seção de referências CVE/NVD), CSV e JSON, gerados só a partir de scans concluídos (RN012); download autenticado e auditado (RN011); histórico imutável (RN003).
 - **Knowledge Base** — artigos por categoria (descrição, impacto, passo a passo de remediação, referências), correlacionados a findings por `category` sem FK, com fallback genérico; seed inicial com 6 artigos reais; único conteúdo do domínio editável (CRUD completo, não é histórico imutável); integrado ao relatório técnico.
-- **Frontend completo** — login, dashboard SOC (KPIs de risco, ativos priorizados, heatmap), targets, scans, assets (tecnologias + vulnerabilidades), Vulnerabilities, Reports (geração + download) e Knowledge Base, na identidade visual oficial (ver abaixo).
+- **Gestão de alvos e scans** — alvos podem ser **editados e excluídos** (a exclusão preserva o histórico de scans, que apenas perdem o vínculo); scans concluídos podem ser **excluídos em cascata por admin** (removendo findings e relatórios associados, incluindo os arquivos — RN014), com bloqueio para scans em execução (409) e trilha de auditoria.
+- **Frontend completo** — construído sobre **shadcn/ui** na identidade visual oficial (ver abaixo): login, dashboard SOC (KPIs, donut de severidade, heatmap, ativos priorizados), CRUD de targets, scans (com detalhe: timeline, serviços, findings), explorer de Vulnerabilidades com painel de detalhe do finding (evidência, CVE→NVD, remediação da Knowledge Base), assets, Reports (geração + **pré-visualização in-app** + download) e Knowledge Base — tudo com busca, filtros, paginação, confirmações destrutivas, toasts e navegação responsiva.
 
 ## Identidade visual
 
@@ -74,13 +76,13 @@ A identidade da marca está em [`docs/ui.md`](docs/ui.md) e nos assets `Byakugan
 | Acento (Byakugan Lavender) | ▉ | `#C8B6FF` |
 | Sucesso / Atenção / Crítico | ▉ ▉ ▉ | `#22C55E` / `#F59E0B` / `#EF4444` |
 
-O logo é renderizado em SVG vetorial ([`frontend/src/components/brand/Logo.tsx`](frontend/src/components/brand/Logo.tsx)).
+A UI é construída sobre **shadcn/ui** (primitivos Radix) com tokens de cor em CSS variables HSL (tema claro em `:root`, Cyber Navy em `.dark` — o padrão); ícones **lucide-react**, toasts **sonner** e gráficos **recharts**. Detalhes do design system em [`docs/ui.md`](docs/ui.md). O logo é renderizado a partir da arte raster em [`frontend/src/components/brand/Logo.tsx`](frontend/src/components/brand/Logo.tsx).
 
 ## Stack
 
 | Camada | Tecnologias |
 | --- | --- |
-| Frontend | React, TypeScript, Vite, TailwindCSS, React Query, Zustand, React Router |
+| Frontend | React, TypeScript, Vite, TailwindCSS, shadcn/ui (Radix), lucide-react, sonner, recharts, React Query, Zustand, React Router |
 | Backend | Python 3.13+, Django, Django REST Framework, SimpleJWT, django-filter |
 | Assíncrono | Celery, Redis |
 | Scanners | socket (TCP connect), dnspython, requests (HTTP fingerprint + NVD), ssl (TLS) |
@@ -175,10 +177,14 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 | POST | `/api/auth/logout/` | Invalida o refresh (blacklist) | Autenticado |
 | GET | `/api/auth/me/` | Usuário atual | Autenticado |
 | POST | `/api/auth/register/` | Cria usuário | admin |
-| GET/POST | `/api/targets/` | Lista / cadastra alvos autorizados | analyst, admin |
+| GET/POST | `/api/targets/` | Lista / cadastra alvos autorizados | criar: analyst, admin |
+| PATCH | `/api/targets/{id}/` | Edita um alvo (recalcula o tipo; auditado) | analyst, admin |
+| DELETE | `/api/targets/{id}/` | Exclui um alvo (scans preservados sem vínculo) | admin |
 | GET/POST | `/api/scans/` | Lista / cria scans | criar: analyst, admin |
 | POST | `/api/scans/{id}/cancel/` | Cancela um scan | analyst, admin |
+| DELETE | `/api/scans/{id}/` | Exclui scan em cascata (findings + relatórios; 409 se ativo — RN014) | admin |
 | GET | `/api/scans/{id}/findings/` | Findings do scan | Autenticado |
+| GET | `/api/scans/{id}/services/` | Serviços descobertos pelo scan | Autenticado |
 | GET | `/api/assets/` | Inventário de ativos | Autenticado |
 | GET | `/api/assets/{id}/services/` | Serviços de um ativo | Autenticado |
 | GET | `/api/assets/{id}/technologies/` | Tecnologias identificadas (technology profile) | Autenticado |
@@ -213,9 +219,13 @@ backend/           # Django + DRF + Celery
   apps/accounts/   # User (email + RBAC), auth JWT
   apps/assets/     # Asset, Service, Technology (inventário + technology profile)
   apps/scans/      # Target, Scan, Vulnerability, Finding, adapters (discovery/fingerprint/vulnerability), signatures, cve, correlation (risk score), services, tasks
-  apps/reports/    # Report, payload (executivo/técnico), rendering (PDF/CSV/JSON), services
+  apps/reports/    # Report, payload (executivo/técnico + narrativa/referências), rendering (dispatcher), pdf (PDF profissional), services
   apps/knowledge/  # KnowledgeArticle, services (correlação por categoria), seed de conteúdo
-frontend/          # React + TS + Vite (auth, layout, páginas, brand)
+frontend/          # React + TS + Vite; design system shadcn/ui em src/components/ui/
+  src/components/  # ui/ (primitivos + kit Byakugan), targets/, scans/, findings/, reports/, charts/, brand/, layout/
+  src/pages/       # login, dashboard, targets, scans, assets, vulnerabilities, reports, knowledge
+  src/hooks/       # useData (React Query), usePermissions, useDebounce, useChartColors…
+  src/lib/         # api (fetch + JWT refresh), format, errors, utils, types
 docs/              # documentação canônica (comece por docs/architecture.md)
 infra/             # configs de produção
 scripts/           # helpers de desenvolvimento

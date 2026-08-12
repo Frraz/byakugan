@@ -126,9 +126,11 @@ sudo systemctl reload nginx                                # se mudou o .conf
 ## Parar / remover
 
 ```bash
-docker compose -f docker-compose.prod.yml down       # para (mantém o volume do banco)
-docker compose -f docker-compose.prod.yml down -v     # CUIDADO: apaga o banco
+docker compose -f docker-compose.prod.yml down       # para (mantém os volumes: banco + relatórios)
+docker compose -f docker-compose.prod.yml down -v     # CUIDADO: apaga o banco E os relatórios gerados (volume report_media)
 ```
+
+> Os artefatos de relatório (PDF/CSV/JSON) ficam no volume `report_media` (montado em `/app/media` no `byakugan_web`), não no banco. Persistem entre redeploys e só são removidos com `down -v`.
 
 ## Checagem anti-interferência (antes de subir)
 
