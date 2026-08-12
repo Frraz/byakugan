@@ -94,3 +94,34 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
 export async function fetchHealth(): Promise<HealthResponse> {
   return apiFetch<HealthResponse>("/health/", { auth: false });
 }
+
+/**
+ * Baixa um artefato binário (ex.: relatório PDF/CSV) e dispara o download no
+ * navegador. Separado de `apiFetch` porque a resposta não é JSON.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const url = new URL(`${API_BASE_URL}${path}`, window.location.origin);
+
+  const doRequest = (token: string | null) =>
+    fetch(url.toString(), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+
+  let token = useAuthStore.getState().access;
+  let resp = await doRequest(token);
+
+  if (resp.status === 401) {
+    token = await refreshAccessToken();
+    if (token) resp = await doRequest(token);
+  }
+
+  if (!resp.ok) throw new ApiError(resp.status, await resp.text());
+
+  const blob = await resp.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}

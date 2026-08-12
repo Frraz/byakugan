@@ -15,6 +15,7 @@
 | RN009 | A IA nunca executa ações que alterem sistemas; apenas analisa, explica, resume e recomenda. A decisão final é do usuário. |
 | RN010 | Estados de scan seguem a máquina: `pending → running → (completed | failed | cancelled)`. Transições inválidas são rejeitadas. |
 | RN011 | Todo evento sensível (login, criação/execução de scan, exportação e exclusão) gera registro de auditoria. |
+| RN012 | Relatórios só podem ser gerados a partir de scans com status `completed` (dados parciais de scans em execução/falhos não geram relatório). Retorna `409`. |
 
 ## Papéis (RBAC)
 

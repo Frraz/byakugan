@@ -12,6 +12,7 @@ import {
   DashboardIcon,
   LogoutIcon,
   MoonIcon,
+  ReportsIcon,
   ScansIcon,
   SunIcon,
   TargetsIcon,
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/scans", label: "Scans", icon: ScansIcon },
   { to: "/assets", label: "Assets", icon: AssetsIcon },
   { to: "/vulnerabilities", label: "Vulnerabilities", icon: VulnIcon },
+  { to: "/reports", label: "Reports", icon: ReportsIcon },
 ];
 
 function NavItem({ to, label, icon: Icon, end }: (typeof NAV)[number]) {

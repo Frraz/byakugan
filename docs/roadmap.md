@@ -41,9 +41,12 @@ O Byakugan é desenvolvido incrementalmente: parte de um MVP funcional de descob
 - Computado sob demanda a partir dos `Finding` (sem modelo próprio, sempre atualizado) · API `GET /api/risk/overview/` · Dashboard com KPIs de risco, ativos priorizados e heatmap
 - **Resultado entregue:** o usuário vê, de relance, quais ativos são mais críticos e onde o risco está concentrado.
 
-## Fase 5 — Reporting (V1)
+## Fase 5 — Reporting ✅ (concluída — V1)
 **Objetivo:** relatórios profissionais.
-- PDF executivo · PDF técnico · CSV · JSON · histórico de relatórios
+- Relatório executivo (resumo, risk score, top riscos priorizados, heatmap) e técnico (inventário, findings completos com evidência/recomendação, metadados do scan)
+- PDF (via `reportlab`) · CSV (uma linha por finding) · JSON (payload completo) · histórico de relatórios (imutáveis — RN003)
+- App dedicado `apps/reports`, reaproveita o Correlation Engine (Fase 4) para o risk score · download autenticado e auditado (RN011) · só gera a partir de scan `completed` (RN012)
+- **Resultado entregue:** o usuário exporta um relatório profissional (PDF/CSV/JSON) de qualquer scan concluído, com um clique.
 
 ## Fase 6 — Knowledge Base (V1)
 **Objetivo:** explicar vulnerabilidades e correções.
@@ -65,7 +68,7 @@ A 1.0 é concluída quando estiverem funcionais e integrados:
 - [ ] Asset Discovery
 - [ ] Fingerprinting
 - [ ] Vulnerability Assessment
-- [ ] Reporting
+- [x] Reporting
 - [ ] AI Assistant
 - [ ] Cobertura de testes > 80%
 - [ ] Documentação completa

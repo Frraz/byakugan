@@ -43,9 +43,9 @@
 
 ## V1
 - [x] Correlation Engine (risk score 0–100, priorização automática por ativo, agrupamento por criticidade, heatmap por categoria — `apps/scans/correlation.py` + `GET /api/risk/overview/`, computado sob demanda)
-- [ ] Reporting (PDF executivo/técnico, CSV, JSON)
+- [x] Reporting (PDF via `reportlab` / CSV / JSON, executivo e técnico, app `apps/reports`, RN012 — só a partir de scan `completed`; download autenticado e auditado)
 - [ ] Knowledge Base
-- [~] Dashboards executivo e técnico (Dashboard SOC com KPIs de risco, ativos priorizados e heatmap entregue; visão executiva dedicada fica para Reporting/Fase 5)
+- [~] Dashboards executivo e técnico (Dashboard SOC com KPIs de risco, ativos priorizados e heatmap entregue; relatório executivo em PDF cobre a visão de gestão — dashboard executivo dedicado no frontend fica para evolução futura)
 - [ ] AI Assistant (explicação, correção, resumo)
 - [ ] Cobertura de testes > 80%
 

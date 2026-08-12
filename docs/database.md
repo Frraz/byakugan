@@ -159,6 +159,8 @@ Relatório gerado a partir de um scan.
 | created_by | FK → users | |
 | created_at | datetime | |
 
+> Implementado em `apps/reports` (app dedicado — diferente de `Vulnerability`/`Finding`/`Technology`, que vivem em `apps/scans`/`apps/assets`; geração de PDF/CSV/JSON é uma responsabilidade distinta o bastante para justificar o próprio app). `file_path` é relativo a `MEDIA_ROOT`; o artefato nunca é servido por URL estática — só via `GET /api/reports/{id}/download/`, autenticado e auditado (RN011).
+
 ### audit_logs
 Trilha de auditoria imutável.
 

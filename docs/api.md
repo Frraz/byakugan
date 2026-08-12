@@ -212,16 +212,31 @@ Risk assessment computado sob demanda a partir dos `Finding` persistidos — nã
 ## Reports
 
 ### `GET /api/reports/`
-Lista relatórios gerados.
+Lista relatórios gerados. Filtros: `?scan=`, `?report_type=` (`executive`\|`technical`), `?format=` (`pdf`\|`csv`\|`json`).
 
 ### `POST /api/reports/`
-Gera um relatório para um scan.
+Gera um relatório para um scan. Requer papel `analyst` ou `admin`. O scan precisa estar `completed` (RN012); do contrário retorna `409`.
 ```json
-{ "scan": "<id>", "report_type": "executive", "format": "pdf" }  // → 201
+// request
+{ "scan": "<id>", "report_type": "executive", "format": "pdf" }
+// 201
+{
+  "id": "...", "scan": "<id>", "report_type": "executive", "format": "pdf",
+  "file_path": "reports/<uuid>.pdf", "created_by": "...", "created_at": "..."
+}
+// 409 — scan ainda não concluído (RN012)
+{ "detail": "Relatórios só podem ser gerados a partir de scans concluídos (RN012)." }
 ```
+> `report_type=executive` produz resumo + risk score + top riscos priorizados + heatmap (payload/PDF); `report_type=technical` produz inventário de ativos + lista completa de findings com evidência/recomendação. O CSV é sempre uma linha por finding, independente do `report_type` (ver `docs/reporting.md`).
+
+### `GET /api/reports/{id}/`
+Detalhe do relatório.
+
+### `DELETE /api/reports/{id}/`
+Exclui o relatório e o artefato em disco. Restrito a `admin` (RN006).
 
 ### `GET /api/reports/{id}/download/`
-Baixa o artefato do relatório.
+Baixa o artefato do relatório (`Content-Type` conforme o formato). Acesso auditado (RN011).
 
 ---
 

@@ -66,6 +66,16 @@ export function VulnIcon(p: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ReportsIcon(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...p}>
+      <path d="M7 2.5h7l4 4V21a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1Z" />
+      <path d="M14 2.5V7h4" />
+      <path d="M9 12h6M9 15.5h6M9 18.5h3" />
+    </svg>
+  );
+}
+
 export function EyeIcon(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base} {...p}>

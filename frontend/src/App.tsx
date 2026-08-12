@@ -8,6 +8,7 @@ import { AssetDetailPage } from "./pages/AssetDetailPage";
 import { AssetsPage } from "./pages/AssetsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { ScanDetailPage } from "./pages/ScanDetailPage";
 import { ScansPage } from "./pages/ScansPage";
 import { TargetsPage } from "./pages/TargetsPage";
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="assets" element={<AssetsPage />} />
           <Route path="assets/:id" element={<AssetDetailPage />} />
           <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
+          <Route path="reports" element={<ReportsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

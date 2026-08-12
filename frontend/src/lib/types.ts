@@ -177,3 +177,18 @@ export interface RiskOverview {
   top_assets: AssetRisk[];
   heatmap: HeatmapCell[];
 }
+
+// --- Reporting ---
+
+export type ReportType = "executive" | "technical";
+export type ReportFormat = "pdf" | "csv" | "json";
+
+export interface Report {
+  id: string;
+  scan: string;
+  report_type: ReportType;
+  format: ReportFormat;
+  file_path: string;
+  created_by: string;
+  created_at: string;
+}

@@ -34,6 +34,7 @@ LOCAL_APPS = [
     "apps.accounts",
     "apps.assets",
     "apps.scans",
+    "apps.reports",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -168,6 +169,11 @@ USE_TZ = True
 # --- Arquivos estáticos ---
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# --- Arquivos gerados (relatórios) ---
+# Não expostos via URL pública: o download passa sempre pela API autenticada e
+# auditada (RN011), nunca por serving estático direto do nginx/whitenoise.
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

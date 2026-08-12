@@ -43,13 +43,13 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 | 2 | Fingerprinting (servidores, frameworks, CMS, TLS, technology profile) | ✅ Concluída |
 | 3 | Vulnerability Assessment (CVE/NVD, CVSS, findings) | ✅ Concluída |
 | 4 | Correlation Engine (risk score, priorização, heatmaps) | ✅ Concluída |
-| 5 | Reporting (PDF/CSV/JSON) | ⏳ Planejada |
+| 5 | Reporting (PDF/CSV/JSON) | ✅ Concluída |
 | 6 | Knowledge Base | ⏳ Planejada |
 | 7 | AI Assistant | ⏳ Planejada |
 
 Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para o detalhamento.
 
-## Funcionalidades entregues (Fases 0–4)
+## Funcionalidades entregues (Fases 0–5)
 
 - **Autenticação JWT** — login, refresh, logout com blacklist, `me`; criação de usuários restrita a admin.
 - **RBAC** — papéis `admin` / `analyst` / `viewer` aplicados por permission classes em cada endpoint.
@@ -59,7 +59,8 @@ Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para
 - **Inventário de ativos** — hosts, serviços e tecnologias descobertos (*technology profile*: SO, servidor web, framework, linguagem, CMS, frontend, TLS), com histórico imutável.
 - **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan, com evidência e recomendação (RN008); pipeline em duas fases garante que a correlação de CVEs sempre leia o profile mais recente do próprio scan.
 - **Correlation Engine** — risk score (0–100) e priorização automática de ativos, agrupamento por criticidade e heatmap por categoria, computados sob demanda a partir dos findings (sem cache a invalidar — sempre atualizado).
-- **Frontend completo** — login, dashboard SOC (KPIs de risco, ativos priorizados, heatmap), targets, scans, assets (tecnologias + vulnerabilidades) e página de Vulnerabilities, na identidade visual oficial (ver abaixo).
+- **Reporting** — relatórios executivo (risco + top riscos + heatmap) e técnico (inventário + findings completos) em PDF (`reportlab`), CSV e JSON, gerados só a partir de scans concluídos (RN012); download autenticado e auditado (RN011); histórico imutável (RN003).
+- **Frontend completo** — login, dashboard SOC (KPIs de risco, ativos priorizados, heatmap), targets, scans, assets (tecnologias + vulnerabilidades), Vulnerabilities e Reports (geração + download), na identidade visual oficial (ver abaixo).
 
 ## Identidade visual
 
@@ -82,6 +83,7 @@ O logo é renderizado em SVG vetorial ([`frontend/src/components/brand/Logo.tsx`
 | Backend | Python 3.13+, Django, Django REST Framework, SimpleJWT, django-filter |
 | Assíncrono | Celery, Redis |
 | Scanners | socket (TCP connect), dnspython, requests (HTTP fingerprint + NVD), ssl (TLS) |
+| Relatórios | reportlab (PDF) |
 | Banco / busca | PostgreSQL, OpenSearch (futuro) |
 | Infra | Docker, Docker Compose |
 
@@ -182,6 +184,9 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 | GET | `/api/vulnerabilities/` | Catálogo de vulnerabilidades (CVE/CVSS) | Autenticado |
 | GET | `/api/findings/` | Findings do ambiente (filtros: severity/asset/scan) | Autenticado |
 | GET | `/api/risk/overview/` | Risk score, ativos priorizados e heatmap (Correlation Engine) | Autenticado |
+| GET/POST | `/api/reports/` | Lista / gera relatórios (executivo/técnico, PDF/CSV/JSON) | criar: analyst, admin |
+| GET | `/api/reports/{id}/download/` | Baixa o artefato do relatório | Autenticado |
+| DELETE | `/api/reports/{id}/` | Exclui relatório | admin |
 | GET | `/api/audit-logs/` | Trilha de auditoria | admin |
 
 ---
@@ -204,6 +209,7 @@ backend/           # Django + DRF + Celery
   apps/accounts/   # User (email + RBAC), auth JWT
   apps/assets/     # Asset, Service, Technology (inventário + technology profile)
   apps/scans/      # Target, Scan, Vulnerability, Finding, adapters (discovery/fingerprint/vulnerability), signatures, cve, correlation (risk score), services, tasks
+  apps/reports/    # Report, payload (executivo/técnico), rendering (PDF/CSV/JSON), services
 frontend/          # React + TS + Vite (auth, layout, páginas, brand)
 docs/              # documentação canônica (comece por docs/architecture.md)
 infra/             # configs de produção

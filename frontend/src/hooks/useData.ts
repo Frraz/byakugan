@@ -2,11 +2,14 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "../lib/api";
+import { apiFetch, downloadFile } from "../lib/api";
 import type {
   Asset,
   Finding,
   Paginated,
+  Report,
+  ReportFormat,
+  ReportType,
   RiskOverview,
   Scan,
   Service,
@@ -145,5 +148,44 @@ export function useRiskOverview(limit = 5) {
   return useQuery({
     queryKey: ["risk-overview", limit],
     queryFn: () => apiFetch<RiskOverview>("/risk/overview/", { params: { limit } }),
+  });
+}
+
+// --- Reports ---
+
+export function useReports(params?: { scan?: string; report_type?: string; format?: string }) {
+  return useQuery({
+    queryKey: ["reports", params],
+    queryFn: () => apiFetch<Paginated<Report>>("/reports/", { params }),
+  });
+}
+
+export interface CreateReportInput {
+  scan: string;
+  report_type: ReportType;
+  format: ReportFormat;
+}
+
+export function useCreateReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateReportInput) =>
+      apiFetch<Report>("/reports/", { method: "POST", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
+  });
+}
+
+export function useDeleteReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/reports/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
+  });
+}
+
+export function useDownloadReport() {
+  return useMutation({
+    mutationFn: ({ id, filename }: { id: string; filename: string }) =>
+      downloadFile(`/reports/${id}/download/`, filename),
   });
 }
