@@ -7,6 +7,7 @@
   - Access Token — expira em **15 minutos**.
   - Refresh Token — expira em **7 dias**.
 - Rotação de refresh token e blacklist no logout.
+- Assinado com `JWT_SECRET` (env própria, separada de `DJANGO_SECRET_KEY` — rotacionar uma não afeta a outra; sem `JWT_SECRET` definida, cai no `DJANGO_SECRET_KEY`). Rotacionar `JWT_SECRET` invalida todos os tokens já emitidos.
 
 ## Controle de acesso (RBAC)
 | Papel | Acesso |

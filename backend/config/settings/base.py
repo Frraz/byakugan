@@ -127,6 +127,11 @@ REST_FRAMEWORK = {
 from datetime import timedelta  # noqa: E402
 
 SIMPLE_JWT = {
+    # Chave de assinatura própria — separada de DJANGO_SECRET_KEY (usado por
+    # sessions/CSRF/outros signers do Django) para que rotacionar uma não
+    # force a rotação da outra. Sem JWT_SECRET no ambiente, cai no
+    # DJANGO_SECRET_KEY (comportamento padrão do simplejwt).
+    "SIGNING_KEY": env("JWT_SECRET", default=SECRET_KEY),
     "ACCESS_TOKEN_LIFETIME": timedelta(
         minutes=env.int("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", default=15)
     ),
