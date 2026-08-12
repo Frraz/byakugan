@@ -13,6 +13,7 @@ faixas, títulos e cabeçalhos de tabela.
 from __future__ import annotations
 
 import io
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -45,6 +47,22 @@ from .payload import build_report_payload
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 LOGO_PATH = ASSETS_DIR / "logo.png"
+
+
+@lru_cache(maxsize=1)
+def _logo() -> tuple[ImageReader, float] | None:
+    """``ImageReader`` do logo + razão largura/altura, carregado uma única vez.
+
+    Reusar o MESMO ``ImageReader`` na capa e no cabeçalho faz o reportlab
+    **deduplicar** a imagem embutida no PDF (embute uma vez em vez de uma por
+    página) — mantém o arquivo leve o suficiente para o preview no navegador.
+    """
+    if not LOGO_PATH.exists():
+        return None
+    reader = ImageReader(str(LOGO_PATH))
+    width, height = reader.getSize()
+    return reader, width / height
+
 
 # Identidade Byakugan (docs/ui.md).
 NAVY = colors.HexColor("#0B1220")
@@ -397,11 +415,14 @@ def _technical_story(payload: dict[str, Any]) -> list:
 
 def _cover(payload: dict[str, Any], title: str) -> list:
     """Página de capa: faixa navy com logo, título, alvo e data."""
-    logo = (
-        Image(str(LOGO_PATH), width=6 * cm, height=6 * cm * 768 / 1408)
-        if LOGO_PATH.exists()
-        else Spacer(1, 2 * cm)
-    )
+    asset = _logo()
+    if asset is not None:
+        # O flowable Image exige um path/file-like (não aceita ImageReader);
+        # o logo já é leve (~140 KB), então embutir aqui não pesa.
+        _, ratio = asset
+        logo = Image(str(LOGO_PATH), width=6 * cm, height=6 * cm / ratio)
+    else:
+        logo = Spacer(1, 2 * cm)
     inner = [
         logo,
         Spacer(1, 1 * cm),
@@ -433,13 +454,15 @@ def _cover(payload: dict[str, Any], title: str) -> list:
 def _draw_header(canvas, doc):  # noqa: ANN001 — callback do reportlab
     """Cabeçalho das páginas de conteúdo: logo pequeno + faixa."""
     canvas.saveState()
-    if LOGO_PATH.exists():
+    asset = _logo()
+    if asset is not None:
+        reader, ratio = asset
         canvas.drawImage(
-            str(LOGO_PATH),
+            reader,
             2 * cm,
             A4[1] - 2 * cm,
             width=1.2 * cm,
-            height=1.2 * cm * 768 / 1408,
+            height=1.2 * cm / ratio,
             mask="auto",
         )
     canvas.setFont("Helvetica-Bold", 10)
