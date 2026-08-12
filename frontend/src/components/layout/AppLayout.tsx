@@ -62,7 +62,7 @@ export function AppLayout({ children }: { children?: ReactNode }) {
     <div className="flex min-h-screen">
       {/* Sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-border/60 bg-surface-2/40 p-4 backdrop-blur-sm md:flex">
-        <Logo size={30} className="px-1 py-2" />
+        <Logo size={45} className="px-1 py-2" />
         <nav className="mt-6 flex flex-1 flex-col gap-1">
           {NAV.map((item) => (
             <NavItem key={item.to} {...item} />

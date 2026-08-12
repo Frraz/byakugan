@@ -26,7 +26,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <EyeMark size={72} className="text-accent" />
+          <EyeMark size={108} className="text-accent" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-[0.2em] text-foreground">
             BYAKUGAN
           </h1>
