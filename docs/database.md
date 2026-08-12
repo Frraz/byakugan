@@ -195,6 +195,7 @@ Trilha de auditoria imutável.
 
 ## Regras de integridade
 
-- **Imutabilidade**: registros de `scans`, `findings` e `reports` não são atualizados após conclusão nem apagados (exceto por admin, conforme RN006).
+- **Imutabilidade**: registros de `scans`, `findings` e `reports` não são atualizados após conclusão nem apagados (exceto por admin, conforme RN006/RN014).
+- **Semântica de deleção de scan**: no schema, `findings.scan` e `reports.scan` usam `PROTECT` (rede de segurança contra deleções acidentais). A exclusão administrativa de um scan (RN014) é feita **em cascata pelo service** (`apps.scans.services.delete_scan`), dentro de uma transação, removendo findings, relatórios e artefatos em disco — nunca por CASCADE de banco.
 - **Findings sempre com contexto**: `description`, `evidence` e `recommendation` são obrigatórios.
 - **Autorização**: `scans.authorized_by` obrigatório antes da execução.

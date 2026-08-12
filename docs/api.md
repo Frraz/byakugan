@@ -64,7 +64,7 @@ Criação de usuário (restrito a `admin`).
 ## Targets
 
 ### `GET /api/targets/`
-Lista alvos cadastrados. Filtros: `?is_active=`, `?search=` (name/value).
+Lista alvos cadastrados. Filtros: `?is_active=`, `?kind=`, `?search=` (name/value). Cada item inclui `scans_count` (nº de scans vinculados — usado pela UI para avisar antes de excluir).
 
 ### `POST /api/targets/`
 Cadastra um alvo com autorização (papel `analyst` ou `admin`). O `value` é validado (RN001) e `kind` é derivado.
@@ -85,6 +85,9 @@ Cadastra um alvo com autorização (papel `analyst` ou `admin`). O `value` é va
 
 ### `GET /api/targets/{id}/` · `PATCH` · `DELETE`
 Detalhe, atualização e exclusão (exclusão apenas `admin`, auditada — RN006).
+
+- `PATCH`: papel `analyst`/`admin`. Se `value` mudar, `kind` é **reclassificado** automaticamente (RN001) e o evento `target.update` é auditado (RN011).
+- `DELETE`: os scans vinculados são **preservados** — ficam com `target_ref` nulo, mantendo as cópias de `target`/`authorized_by`/`authorization_scope` feitas na criação.
 
 ---
 
@@ -122,7 +125,7 @@ Lista as tecnologias identificadas no ativo pelo fingerprinting (*technology pro
 ## Scans
 
 ### `GET /api/scans/`
-Lista scans. Filtros: `?status=`, `?scan_type=`.
+Lista scans. Filtros: `?status=`, `?scan_type=`, `?search=` (target). Cada item inclui contexto agregado para a UI: `target_name` (nome do Target cadastrado, se vinculado), `findings_count` e `severity_counts` (`{"critical": n, "high": n, "medium": n, "low": n, "info": n}`).
 
 ### `POST /api/scans/`
 Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target_ref`** (id de um Target cadastrado — a autorização é herdada) **ou** os campos de alvo/autorização inline. O alvo é validado contra o escopo antes de enfileirar (RN007) e a varredura só executa se `BYAKUGAN_SCANNING_ENABLED` estiver ativo.
@@ -154,6 +157,16 @@ Cancela um scan em execução.
 ### `GET /api/scans/{id}/findings/`
 Findings produzidos pelo scan.
 
+### `GET /api/scans/{id}/services/`
+Serviços descobertos pelo scan (via ativos relacionados aos findings).
+
+### `DELETE /api/scans/{id}/`
+Exclui um scan **em cascata** (RN014): remove findings, relatórios e artefatos em disco. Restrito a `admin` (RN006); auditado com contagens (`scan.delete`).
+```json
+// 409 — scan ainda ativo (pending/running)
+{ "detail": "Cancele o scan antes de excluí-lo." }
+```
+
 ---
 
 ## Vulnerabilities & Findings
@@ -162,10 +175,16 @@ Findings produzidos pelo scan.
 Catálogo de vulnerabilidades. Filtros: `?severity=`, `?search=` (cve/título).
 
 ### `GET /api/findings/`
-Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`.
+Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`, `?category=`, `?search=` (título/categoria/CVE). `asset`, `scan` e `vulnerability` vêm **aninhados** (resumo) para a UI exibir contexto sem requests extras.
 ```json
 {
-  "id": "...", "asset": "...", "scan": "...", "category": "tls",
+  "id": "...", "category": "tls",
+  "asset": { "id": "...", "hostname": "web-01", "ip": "192.168.0.10", "domain": "" },
+  "scan": { "id": "...", "target": "empresa.com", "scan_type": "full", "created_at": "..." },
+  "vulnerability": {
+    "id": "...", "cve": "CVE-2024-1111", "title": "...", "severity": "high",
+    "cvss_score": "7.5", "cvss_vector": "CVSS:3.1/...", "references": ["https://..."]
+  },
   "title": "TLS 1.0 habilitado", "severity": "medium", "cvss": 5.9,
   "description": "...", "evidence": "...", "recommendation": "Desabilitar TLS 1.0/1.1"
 }
@@ -221,8 +240,10 @@ Gera um relatório para um scan. Requer papel `analyst` ou `admin`. O scan preci
 { "scan": "<id>", "report_type": "executive", "format": "pdf" }
 // 201
 {
-  "id": "...", "scan": "<id>", "report_type": "executive", "format": "pdf",
-  "file_path": "reports/<uuid>.pdf", "created_by": "...", "created_at": "..."
+  "id": "...", "scan": "<id>", "scan_target": "empresa.com", "scan_type": "full",
+  "scan_finished_at": "...", "report_type": "executive", "format": "pdf",
+  "file_path": "reports/<uuid>.pdf", "file_size": 24576,
+  "created_by": "...", "created_at": "..."
 }
 // 409 — scan ainda não concluído (RN012)
 { "detail": "Relatórios só podem ser gerados a partir de scans concluídos (RN012)." }
