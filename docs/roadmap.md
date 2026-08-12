@@ -48,9 +48,13 @@ O Byakugan é desenvolvido incrementalmente: parte de um MVP funcional de descob
 - App dedicado `apps/reports`, reaproveita o Correlation Engine (Fase 4) para o risk score · download autenticado e auditado (RN011) · só gera a partir de scan `completed` (RN012)
 - **Resultado entregue:** o usuário exporta um relatório profissional (PDF/CSV/JSON) de qualquer scan concluído, com um clique.
 
-## Fase 6 — Knowledge Base (V1)
+## Fase 6 — Knowledge Base ✅ (concluída — V1)
 **Objetivo:** explicar vulnerabilidades e correções.
-- Descrição · impacto · referências · mitigações · passo a passo de correção
+- Artigos por categoria: descrição/resumo · impacto · referências · passo a passo de remediação (RN013)
+- App dedicado `apps/knowledge`; correlação com findings por `category` (sem FK), com fallback genérico · seed inicial com 6 artigos reais (software, tls, web, network, cms, general)
+- CRUD completo (leitura para todos, escrita analyst/admin, exclusão admin) — único modelo do domínio que não é histórico imutável (RN003 não se aplica)
+- Integrado ao relatório técnico (Fase 5): `knowledge_articles` traz a remediação relacionada às categorias dos findings do scan
+- **Resultado entregue:** o usuário consulta impacto e passo a passo de correção a partir de qualquer finding, e o relatório técnico já vem com essa orientação.
 
 ## Fase 7 — AI Assistant (V1)
 **Objetivo:** analista virtual de segurança.

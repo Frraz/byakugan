@@ -13,6 +13,7 @@ from typing import Any
 from django.utils import timezone
 
 from apps.assets.models import Asset
+from apps.knowledge.services import find_article_for_category
 from apps.scans.correlation import compute_asset_risk, compute_heatmap, compute_risk
 from apps.scans.models import Finding, Scan
 
@@ -87,6 +88,34 @@ def build_asset_inventory(scan: Scan) -> list[dict[str, Any]]:
     ]
 
 
+def build_related_knowledge(scan: Scan) -> list[dict[str, Any]]:
+    """Artigos da Knowledge Base relacionados às categorias de finding do scan.
+
+    Um artigo por categoria distinta encontrada (sem repetir o mesmo artigo
+    várias vezes quando findings compartilham categoria — ver
+    ``docs/reporting.md``, seção Implementação).
+    """
+    categories = scan.findings.values_list("category", flat=True).distinct()
+    articles: list[dict[str, Any]] = []
+    seen_slugs: set[str] = set()
+    for category in categories:
+        article = find_article_for_category(category)
+        if article and article.slug not in seen_slugs:
+            seen_slugs.add(article.slug)
+            articles.append(
+                {
+                    "slug": article.slug,
+                    "title": article.title,
+                    "category": article.category,
+                    "summary": article.summary,
+                    "impact": article.impact,
+                    "remediation_steps": article.remediation_steps,
+                    "references": article.references,
+                }
+            )
+    return articles
+
+
 def build_scan_metadata(scan: Scan) -> dict[str, Any]:
     """Metadados de execução do scan (relatório técnico)."""
     return {
@@ -121,5 +150,6 @@ def build_report_payload(scan: Scan, report_type: str) -> dict[str, Any]:
         payload["scan"] = build_scan_metadata(scan)
         payload["assets"] = build_asset_inventory(scan)
         payload["findings"] = build_findings_section(scan)
+        payload["knowledge_articles"] = build_related_knowledge(scan)
 
     return payload

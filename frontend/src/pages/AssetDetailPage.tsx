@@ -1,6 +1,6 @@
 /** Detalhe do ativo — serviços expostos (RF007). */
 
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -64,6 +64,7 @@ export function AssetDetailPage() {
               <Th>Finding</Th>
               <Th>Severidade</Th>
               <Th>CVSS</Th>
+              <Th>Categoria</Th>
               <Th>Recomendação</Th>
             </tr>
           </thead>
@@ -75,6 +76,14 @@ export function AssetDetailPage() {
                   <SeverityBadge severity={f.severity} />
                 </Td>
                 <Td className="font-mono text-primary">{f.cvss ?? "—"}</Td>
+                <Td>
+                  <Link
+                    to={`/knowledge?category=${encodeURIComponent(f.category)}`}
+                    className="text-muted hover:text-primary hover:underline"
+                  >
+                    {f.category}
+                  </Link>
+                </Td>
                 <Td className="max-w-md truncate text-muted">{f.recommendation}</Td>
               </tr>
             ))}

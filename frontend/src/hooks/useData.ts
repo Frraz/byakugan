@@ -6,6 +6,7 @@ import { apiFetch, downloadFile } from "../lib/api";
 import type {
   Asset,
   Finding,
+  KnowledgeArticle,
   Paginated,
   Report,
   ReportFormat,
@@ -187,5 +188,41 @@ export function useDownloadReport() {
   return useMutation({
     mutationFn: ({ id, filename }: { id: string; filename: string }) =>
       downloadFile(`/reports/${id}/download/`, filename),
+  });
+}
+
+// --- Knowledge Base ---
+
+export function useKnowledgeArticles(params?: { category?: string; search?: string }) {
+  return useQuery({
+    queryKey: ["knowledge-base", params],
+    queryFn: () => apiFetch<Paginated<KnowledgeArticle>>("/knowledge-base/", { params }),
+  });
+}
+
+export interface CreateKnowledgeArticleInput {
+  slug: string;
+  title: string;
+  category: string;
+  summary: string;
+  impact: string;
+  remediation_steps: string[];
+  references: string[];
+}
+
+export function useCreateKnowledgeArticle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateKnowledgeArticleInput) =>
+      apiFetch<KnowledgeArticle>("/knowledge-base/", { method: "POST", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge-base"] }),
+  });
+}
+
+export function useDeleteKnowledgeArticle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/knowledge-base/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge-base"] }),
   });
 }

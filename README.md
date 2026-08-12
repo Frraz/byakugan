@@ -44,12 +44,12 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 | 3 | Vulnerability Assessment (CVE/NVD, CVSS, findings) | ✅ Concluída |
 | 4 | Correlation Engine (risk score, priorização, heatmaps) | ✅ Concluída |
 | 5 | Reporting (PDF/CSV/JSON) | ✅ Concluída |
-| 6 | Knowledge Base | ⏳ Planejada |
+| 6 | Knowledge Base | ✅ Concluída |
 | 7 | AI Assistant | ⏳ Planejada |
 
 Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para o detalhamento.
 
-## Funcionalidades entregues (Fases 0–5)
+## Funcionalidades entregues (Fases 0–6)
 
 - **Autenticação JWT** — login, refresh, logout com blacklist, `me`; criação de usuários restrita a admin.
 - **RBAC** — papéis `admin` / `analyst` / `viewer` aplicados por permission classes em cada endpoint.
@@ -60,7 +60,8 @@ Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para
 - **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan, com evidência e recomendação (RN008); pipeline em duas fases garante que a correlação de CVEs sempre leia o profile mais recente do próprio scan.
 - **Correlation Engine** — risk score (0–100) e priorização automática de ativos, agrupamento por criticidade e heatmap por categoria, computados sob demanda a partir dos findings (sem cache a invalidar — sempre atualizado).
 - **Reporting** — relatórios executivo (risco + top riscos + heatmap) e técnico (inventário + findings completos) em PDF (`reportlab`), CSV e JSON, gerados só a partir de scans concluídos (RN012); download autenticado e auditado (RN011); histórico imutável (RN003).
-- **Frontend completo** — login, dashboard SOC (KPIs de risco, ativos priorizados, heatmap), targets, scans, assets (tecnologias + vulnerabilidades), Vulnerabilities e Reports (geração + download), na identidade visual oficial (ver abaixo).
+- **Knowledge Base** — artigos por categoria (descrição, impacto, passo a passo de remediação, referências), correlacionados a findings por `category` sem FK, com fallback genérico; seed inicial com 6 artigos reais; único conteúdo do domínio editável (CRUD completo, não é histórico imutável); integrado ao relatório técnico.
+- **Frontend completo** — login, dashboard SOC (KPIs de risco, ativos priorizados, heatmap), targets, scans, assets (tecnologias + vulnerabilidades), Vulnerabilities, Reports (geração + download) e Knowledge Base, na identidade visual oficial (ver abaixo).
 
 ## Identidade visual
 
@@ -187,6 +188,9 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 | GET/POST | `/api/reports/` | Lista / gera relatórios (executivo/técnico, PDF/CSV/JSON) | criar: analyst, admin |
 | GET | `/api/reports/{id}/download/` | Baixa o artefato do relatório | Autenticado |
 | DELETE | `/api/reports/{id}/` | Exclui relatório | admin |
+| GET/POST | `/api/knowledge-base/` | Lista / cria artigos (descrição/impacto/remediação) | criar: analyst, admin |
+| PATCH | `/api/knowledge-base/{id}/` | Atualiza artigo (único conteúdo editável do domínio) | analyst, admin |
+| DELETE | `/api/knowledge-base/{id}/` | Exclui artigo | admin |
 | GET | `/api/audit-logs/` | Trilha de auditoria | admin |
 
 ---
@@ -210,6 +214,7 @@ backend/           # Django + DRF + Celery
   apps/assets/     # Asset, Service, Technology (inventário + technology profile)
   apps/scans/      # Target, Scan, Vulnerability, Finding, adapters (discovery/fingerprint/vulnerability), signatures, cve, correlation (risk score), services, tasks
   apps/reports/    # Report, payload (executivo/técnico), rendering (PDF/CSV/JSON), services
+  apps/knowledge/  # KnowledgeArticle, services (correlação por categoria), seed de conteúdo
 frontend/          # React + TS + Vite (auth, layout, páginas, brand)
 docs/              # documentação canônica (comece por docs/architecture.md)
 infra/             # configs de produção

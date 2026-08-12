@@ -8,6 +8,7 @@ from apps.reports.models import Report
 from apps.reports.payload import (
     build_asset_inventory,
     build_findings_section,
+    build_related_knowledge,
     build_report_payload,
     build_scan_metadata,
     build_summary,
@@ -74,3 +75,50 @@ def test_technical_payload_has_findings_and_assets_not_top_risks():
     assert "assets" in payload
     assert "scan" in payload
     assert "top_risks" not in payload
+
+
+def test_build_related_knowledge_matches_finding_category():
+    scan = make_completed_scan_with_findings()  # finding com category="software"
+    articles = build_related_knowledge(scan)
+    assert len(articles) == 1
+    assert articles[0]["slug"] == "outdated-software"
+    assert articles[0]["remediation_steps"]
+
+
+def test_build_related_knowledge_deduplicates_repeated_category():
+    from apps.assets.models import Asset
+    from apps.scans.models import Finding, Vulnerability
+
+    scan = make_completed_scan_with_findings()
+    asset = Asset.objects.create(ip="192.168.0.20", hostname="web02")
+    vulnerability = Vulnerability.objects.create(
+        cve="CVE-2024-2222", title="Outra vuln", severity="medium", description="d"
+    )
+    Finding.objects.create(
+        scan=scan,
+        asset=asset,
+        vulnerability=vulnerability,
+        category="software",  # mesma categoria do finding original
+        title="CVE-2024-2222 em apache",
+        severity="medium",
+        description="d",
+        evidence="e",
+        recommendation="r",
+    )
+
+    articles = build_related_knowledge(scan)
+
+    assert len(articles) == 1  # não duplica o mesmo artigo
+
+
+def test_technical_payload_includes_knowledge_articles():
+    scan = make_completed_scan_with_findings()
+    payload = build_report_payload(scan, Report.ReportType.TECHNICAL)
+    assert "knowledge_articles" in payload
+    assert payload["knowledge_articles"][0]["slug"] == "outdated-software"
+
+
+def test_executive_payload_does_not_include_knowledge_articles():
+    scan = make_completed_scan_with_findings()
+    payload = build_report_payload(scan, Report.ReportType.EXECUTIVE)
+    assert "knowledge_articles" not in payload

@@ -15,6 +15,8 @@ User ──< Target ──< Scan ──< Finding
              └──────────┘  (Scan ──< Report)
 
 User ──< AuditLog
+
+KnowledgeArticle  (sem FK — casado com Finding.category em tempo de leitura, ver services.py)
 ```
 
 ## Tabelas
@@ -160,6 +162,23 @@ Relatório gerado a partir de um scan.
 | created_at | datetime | |
 
 > Implementado em `apps/reports` (app dedicado — diferente de `Vulnerability`/`Finding`/`Technology`, que vivem em `apps/scans`/`apps/assets`; geração de PDF/CSV/JSON é uma responsabilidade distinta o bastante para justificar o próprio app). `file_path` é relativo a `MEDIA_ROOT`; o artefato nunca é servido por URL estática — só via `GET /api/reports/{id}/download/`, autenticado e auditado (RN011).
+
+### knowledge_articles
+Conteúdo explicativo e de remediação por categoria de vulnerabilidade (Fase 6).
+
+| Campo | Tipo | Notas |
+| --- | --- | --- |
+| id | UUID (PK) | |
+| slug | string | único — identificador estável do artigo |
+| title | string | |
+| category | string | mesma taxonomia livre de `findings.category` (ex.: `software`, `tls`, `web`, `network`, `cms`); `general` é o fallback |
+| summary | text | obrigatório (RN013) |
+| impact | text | obrigatório (RN013) |
+| remediation_steps | jsonb | lista ordenada de passos; ao menos 1 (RN013) |
+| references | jsonb | lista de URLs |
+| created_at / updated_at | datetime | |
+
+> Implementado em `apps/knowledge`. **Único modelo do domínio sem imutabilidade tipo RN003**: artigos são conteúdo de referência vivo, editável (CRUD completo). Não há FK de `Finding`/`Vulnerability` para cá — o cruzamento é feito em tempo de leitura por `category` (`apps/knowledge/services.py:find_article_for_category`), com fallback para a categoria `general` quando não há artigo específico. Populado inicialmente por uma migração de dados (`0002_seed_articles.py`) com 6 artigos reais.
 
 ### audit_logs
 Trilha de auditoria imutável.

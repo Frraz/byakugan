@@ -79,7 +79,14 @@ export function ScanDetailPage() {
             {findings.data!.map((f) => (
               <tr key={f.id} className="hover:bg-white/5">
                 <Td className="font-medium">{f.title}</Td>
-                <Td className="text-muted">{f.category}</Td>
+                <Td>
+                  <Link
+                    to={`/knowledge?category=${encodeURIComponent(f.category)}`}
+                    className="text-muted hover:text-primary hover:underline"
+                  >
+                    {f.category}
+                  </Link>
+                </Td>
                 <Td>
                   <SeverityBadge severity={f.severity} />
                 </Td>

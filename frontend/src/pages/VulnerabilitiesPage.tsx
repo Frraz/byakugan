@@ -77,7 +77,14 @@ export function VulnerabilitiesPage() {
                   <SeverityBadge severity={f.severity} />
                 </Td>
                 <Td className="font-mono text-primary">{f.cvss ?? "—"}</Td>
-                <Td className="text-muted">{f.category}</Td>
+                <Td>
+                  <Link
+                    to={`/knowledge?category=${encodeURIComponent(f.category)}`}
+                    className="text-muted hover:text-primary hover:underline"
+                  >
+                    {f.category}
+                  </Link>
+                </Td>
                 <Td>
                   <Link
                     to={`/assets/${f.asset}`}

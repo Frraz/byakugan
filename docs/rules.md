@@ -16,6 +16,7 @@
 | RN010 | Estados de scan seguem a máquina: `pending → running → (completed | failed | cancelled)`. Transições inválidas são rejeitadas. |
 | RN011 | Todo evento sensível (login, criação/execução de scan, exportação e exclusão) gera registro de auditoria. |
 | RN012 | Relatórios só podem ser gerados a partir de scans com status `completed` (dados parciais de scans em execução/falhos não geram relatório). Retorna `409`. |
+| RN013 | Nenhum artigo da Knowledge Base pode ser salvo sem `summary`, `impact` e ao menos um passo em `remediation_steps` (conteúdo sem contexto não é publicado). |
 
 ## Papéis (RBAC)
 
@@ -23,4 +24,4 @@
 | --- | --- |
 | `admin` | Acesso total, incluindo gestão de usuários e exclusão de registros. |
 | `analyst` | Criar/cancelar scans, consultar resultados, gerar relatórios. |
-| `viewer` | Somente leitura (assets, scans, findings, reports). |
+| `viewer` | Somente leitura (assets, scans, findings, reports, knowledge base). |

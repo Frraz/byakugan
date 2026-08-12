@@ -215,6 +215,21 @@ def _technical_story(payload: dict[str, Any]) -> list:
             style.append(("FONTNAME", (2, i), (2, i), "Helvetica-Bold"))
     finding_table.setStyle(TableStyle(style))
     story.append(finding_table)
+
+    articles = payload.get("knowledge_articles", [])
+    if articles:
+        story += [
+            Spacer(1, 0.5 * cm),
+            Paragraph("Conhecimento relacionado (remediação)", _STYLES["Heading2"]),
+        ]
+        for article in articles:
+            story.append(Paragraph(article["title"], _STYLES["Heading3"]))
+            story.append(_p(article["summary"]))
+            steps = "<br/>".join(
+                f"{i}. {step}" for i, step in enumerate(article["remediation_steps"], start=1)
+            )
+            story += [Spacer(1, 0.1 * cm), _p(steps), Spacer(1, 0.3 * cm)]
+
     return story
 
 

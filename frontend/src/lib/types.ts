@@ -192,3 +192,18 @@ export interface Report {
   created_by: string;
   created_at: string;
 }
+
+// --- Knowledge Base ---
+
+export interface KnowledgeArticle {
+  id: string;
+  slug: string;
+  title: string;
+  category: string;
+  summary: string;
+  impact: string;
+  remediation_steps: string[];
+  references: string[];
+  created_at: string;
+  updated_at: string;
+}

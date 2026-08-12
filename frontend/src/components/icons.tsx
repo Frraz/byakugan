@@ -76,6 +76,15 @@ export function ReportsIcon(p: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function KnowledgeIcon(p: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...p}>
+      <path d="M4 4.5c2-1 5-1 7 .5 2-1.5 5-1.5 7-.5v14c-2-1-5-1-7 .5-2-1.5-5-1.5-7-.5V4.5Z" />
+      <path d="M11 5v14" />
+    </svg>
+  );
+}
+
 export function EyeIcon(p: SVGProps<SVGSVGElement>) {
   return (
     <svg {...base} {...p}>

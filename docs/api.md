@@ -240,6 +240,39 @@ Baixa o artefato do relatório (`Content-Type` conforme o formato). Acesso audit
 
 ---
 
+## Knowledge Base
+
+### `GET /api/knowledge-base/`
+Lista artigos. Filtros: `?category=`, `?search=` (título/resumo/categoria).
+
+### `POST /api/knowledge-base/`
+Cria um artigo. Requer papel `analyst` ou `admin`.
+```json
+// request
+{
+  "slug": "weak-tls", "title": "Protocolos TLS obsoletos ou configuração fraca",
+  "category": "tls", "summary": "...", "impact": "...",
+  "remediation_steps": ["Desabilite TLS 1.0 e TLS 1.1...", "Exija TLS 1.2 como mínimo..."],
+  "references": ["https://ssl-config.mozilla.org/"]
+}
+// 201 → mesmo shape + id/created_at/updated_at
+// 400 — sem passo de remediação (RN013)
+{ "remediation_steps": ["Informe ao menos um passo de remediação (RN013)."] }
+```
+
+### `GET /api/knowledge-base/{id}/`
+Detalhe do artigo.
+
+### `PATCH /api/knowledge-base/{id}/`
+Atualiza o artigo. Requer papel `analyst` ou `admin`. **Diferente de Scan/Report/Finding, artigos não são histórico imutável** — podem ser editados conforme o entendimento evolui.
+
+### `DELETE /api/knowledge-base/{id}/`
+Exclui o artigo. Restrito a `admin` (RN006).
+
+> Artigos são correlacionados a findings por `category` (não por FK) — ver `apps/knowledge/services.py:find_article_for_category`, com fallback para a categoria `general`. O relatório técnico (`GET /api/reports/`, `report_type=technical`) já inclui os artigos relacionados às categorias dos findings do scan em `knowledge_articles`.
+
+---
+
 ## Audit Logs
 
 ### `GET /api/audit-logs/`

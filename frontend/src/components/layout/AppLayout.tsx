@@ -10,6 +10,7 @@ import { EyeMark, Logo } from "../brand/Logo";
 import {
   AssetsIcon,
   DashboardIcon,
+  KnowledgeIcon,
   LogoutIcon,
   MoonIcon,
   ReportsIcon,
@@ -26,6 +27,7 @@ const NAV = [
   { to: "/assets", label: "Assets", icon: AssetsIcon },
   { to: "/vulnerabilities", label: "Vulnerabilities", icon: VulnIcon },
   { to: "/reports", label: "Reports", icon: ReportsIcon },
+  { to: "/knowledge", label: "Knowledge Base", icon: KnowledgeIcon },
 ];
 
 function NavItem({ to, label, icon: Icon, end }: (typeof NAV)[number]) {
