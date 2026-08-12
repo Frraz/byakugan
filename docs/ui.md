@@ -56,6 +56,9 @@ Suporte a **dark mode** (padrão) e **light mode** via tokens semânticos (`dark
 ## Componentes base
 Button (filled/neon-outline) · Input · Select · Card/GlassPanel · Modal/Dialog · Table (paginação/ordenação) · Badge (severidade/status, pill com indicador) · StatCard (KPI) · Toast · Tabs · Tooltip · Skeleton (loading).
 
+## Design system (implementação)
+A UI é construída sobre **shadcn/ui** (primitivos Radix, estilo *new-york*), com **lucide-react** (ícones), **sonner** (toasts) e **recharts** (gráficos). Os tokens de cor são **CSS variables em HSL** (`src/index.css`): o tema claro vive em `:root` e o escuro (padrão, Cyber Navy) em `.dark`; o Tailwind (`darkMode: ["class"]`) mapeia tanto os nomes semânticos do shadcn (`background`, `card`, `primary`…) quanto os aliases legados da marca (`navy`, `surface`, `sev-high`…). Componentes próprios do Byakugan (glass-panel, stat-card, severity/status badge, confirm-dialog, data-pagination) ficam em `src/components/ui/` sobre os primitivos. A fonte **Inter** é carregada via `@fontsource-variable/inter`. Toda listagem tem paginação server-side (PAGE_SIZE 20), busca/filtros, skeleton com forma de tabela e estado vazio; ações destrutivas usam `ConfirmDialog` (com confirmação digitada quando em cascata) e feedback via toast. Navegação mobile via `Sheet` (hambúrguer). O polling de scans é adaptativo (só enquanto há scan ativo, evitando estourar o throttle da API).
+
 ## Padrões de dados
 - **Tabelas** para listas (assets, scans, findings) com filtros e ordenação server-side; barra de severidade colorida à direita.
 - **KPI tiles** no topo dos dashboards (Assets, Critical, High, Medium, Risk Score).

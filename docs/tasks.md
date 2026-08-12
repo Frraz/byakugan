@@ -43,11 +43,19 @@
 
 ## V1
 - [x] Correlation Engine (risk score 0–100, priorização automática por ativo, agrupamento por criticidade, heatmap por categoria — `apps/scans/correlation.py` + `GET /api/risk/overview/`, computado sob demanda)
-- [x] Reporting (PDF via `reportlab` / CSV / JSON, executivo e técnico, app `apps/reports`, RN012 — só a partir de scan `completed`; download autenticado e auditado)
+- [x] Reporting (PDF profissional via `reportlab` — capa, gráficos, numeração, narrativa, referências; CSV / JSON; executivo e técnico, app `apps/reports`, RN012 — só a partir de scan `completed`; download autenticado e auditado; preview in-app)
 - [x] Knowledge Base (artigos por categoria — descrição/impacto/referências/remediação, RN013; app `apps/knowledge`; CRUD via `/api/knowledge-base/`; correlação por `Finding.category` sem FK, fallback `general`; seed com 6 artigos reais; integrado ao relatório técnico via `knowledge_articles`)
-- [~] Dashboards executivo e técnico (Dashboard SOC com KPIs de risco, ativos priorizados e heatmap entregue; relatório executivo em PDF cobre a visão de gestão — dashboard executivo dedicado no frontend fica para evolução futura)
+- [x] UI/UX profissional (design system shadcn/ui sobre a identidade Byakugan; CRUD completo de targets, exclusão em cascata de scans — RN014; explorer de vulnerabilidades com detalhe de finding; paginação, filtros, toasts, confirmações destrutivas, navegação mobile, gráficos recharts)
+- [~] Dashboards executivo e técnico (Dashboard SOC com KPIs de risco, donut de severidade, heatmap e ativos priorizados entregue; relatório executivo em PDF cobre a visão de gestão — dashboard executivo dedicado no frontend fica para evolução futura)
 - [ ] AI Assistant (explicação, correção, resumo)
 - [ ] Cobertura de testes > 80%
+
+### Backlog de UI/UX (evolução futura)
+- [ ] Triagem de findings (status open/fixed/false-positive/accepted-risk, owner, dedupe entre scans)
+- [ ] Formulários com react-hook-form + zod (validação client-side rica)
+- [ ] Busca global (cmd-k) na topbar
+- [ ] Geração de relatórios assíncrona (Celery) para scans com muitos findings
+- [ ] Telas de Audit Logs, perfil (`/me`) e gestão de usuários
 
 ## V2
 - [ ] OpenSearch (busca/agregação de findings)
