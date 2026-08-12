@@ -5,6 +5,7 @@ Views finas: a lógica de negócio vive em ``services`` e ``tasks``.
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import asdict
 
 from django.db.models import Count, Q
@@ -198,14 +199,32 @@ class ScanViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def services(self, request: Request, pk: str | None = None) -> Response:
-        """Lista os serviços descobertos pelo scan (via ativos relacionados)."""
+        """Lista os serviços dos ativos cobertos pelo scan.
+
+        O modelo não liga ``Scan`` diretamente a ``Asset``/``Service`` — o único
+        vínculo scan→asset é via ``Finding``. Para scans de ``discovery``/
+        ``fingerprint`` (que não geram findings), resolvemos os ativos pelo
+        **alvo** do scan (``ip``/``hostname``/``domain``), unindo com os ativos
+        que têm findings deste scan (scans de ``vulnerability``).
+        """
+        from apps.assets.models import Asset, Service
         from apps.assets.serializers import ServiceSerializer
 
         scan = self.get_object()
-        asset_ids = scan.findings.values_list("asset_id", flat=True)
-        from apps.assets.models import Service
 
-        services = Service.objects.filter(asset_id__in=asset_ids)
+        # Casar o alvo por hostname/domínio sempre; por IP só se for um IP válido
+        # (o campo é ``inet`` no Postgres — string não-IP levantaria DataError).
+        target_q = Q(hostname=scan.target) | Q(domain=scan.target)
+        try:
+            ipaddress.ip_address(scan.target)
+            target_q |= Q(ip=scan.target)
+        except ValueError:
+            pass
+
+        asset_ids = set(scan.findings.values_list("asset_id", flat=True))
+        asset_ids |= set(Asset.objects.filter(target_q).values_list("id", flat=True))
+
+        services = Service.objects.filter(asset_id__in=asset_ids).select_related("asset")
         return Response(ServiceSerializer(services, many=True).data)
 
 

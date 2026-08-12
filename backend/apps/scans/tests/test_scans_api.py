@@ -238,3 +238,35 @@ def test_analyst_cannot_delete_scan(analyst_client):
     scan = ScanFactory(status=Scan.Status.COMPLETED)
     resp = analyst_client.delete(reverse("scans:scan-detail", args=[scan.id]))
     assert resp.status_code == 403
+
+
+# --- Scan services endpoint (discovery sem findings) ---
+
+
+def test_scan_services_returns_discovered_services_without_findings(viewer_client):
+    """Scan de discovery não gera findings, mas seus serviços devem aparecer."""
+    from apps.assets.models import Asset, Service
+
+    asset = Asset.objects.create(ip="203.0.113.10", hostname="host", os="Linux")
+    Service.objects.create(asset=asset, port=443, protocol="tcp", service_name="https")
+    Service.objects.create(asset=asset, port=22, protocol="tcp", service_name="ssh")
+    scan = ScanFactory(target="203.0.113.10", status=Scan.Status.COMPLETED)
+
+    resp = viewer_client.get(reverse("scans:scan-services", args=[scan.id]))
+
+    assert resp.status_code == 200
+    assert {row["port"] for row in resp.data} == {443, 22}
+
+
+def test_scan_services_matches_domain_target_without_inet_error(viewer_client):
+    """Alvo não-IP (domínio) não pode quebrar o filtro do campo inet (Postgres)."""
+    from apps.assets.models import Asset, Service
+
+    asset = Asset.objects.create(hostname="empresa.com", domain="empresa.com")
+    Service.objects.create(asset=asset, port=80, protocol="tcp", service_name="http")
+    scan = ScanFactory(target="empresa.com", status=Scan.Status.COMPLETED)
+
+    resp = viewer_client.get(reverse("scans:scan-services", args=[scan.id]))
+
+    assert resp.status_code == 200
+    assert [row["port"] for row in resp.data] == [80]
