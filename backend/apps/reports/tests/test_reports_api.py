@@ -79,6 +79,19 @@ def test_download_report(analyst_client):
     assert content.startswith(b"%PDF")
 
 
+def test_report_payload_includes_scan_context_and_file_size(analyst_client):
+    scan = make_completed_scan_with_findings()
+    resp = analyst_client.post(
+        reverse("reports:report-list"),
+        {"scan": str(scan.id), "report_type": "executive", "format": "json"},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.data["scan_target"] == scan.target
+    assert resp.data["scan_type"] == scan.scan_type
+    assert resp.data["file_size"] > 0
+
+
 def test_only_admin_can_delete_report(analyst_client, admin_client):
     scan = make_completed_scan_with_findings()
     create_resp = analyst_client.post(

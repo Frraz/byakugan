@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db.models import F
 from django.utils import timezone
 
 from apps.assets.models import Asset
@@ -56,7 +57,9 @@ def build_top_risks(scan: Scan, limit: int = TOP_RISKS_LIMIT) -> list[dict[str, 
 def build_findings_section(scan: Scan) -> list[dict[str, Any]]:
     """Lista completa de findings do scan, com evidência e recomendação (RN008)."""
     findings: list[Finding] = list(
-        scan.findings.select_related("asset", "vulnerability").order_by("-cvss")
+        scan.findings.select_related("asset", "vulnerability").order_by(
+            F("cvss").desc(nulls_last=True)
+        )
     )
     return [
         {

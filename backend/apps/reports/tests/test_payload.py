@@ -38,6 +38,24 @@ def test_build_findings_section_includes_evidence_and_cve():
     assert findings[0]["asset"] == "web01 (192.168.0.10)"
 
 
+def test_build_findings_section_orders_cvss_nulls_last():
+    scan = make_completed_scan_with_findings()
+    first = scan.findings.first()
+    scan.findings.create(
+        asset=first.asset,
+        category="network",
+        title="Finding sem CVSS",
+        severity="info",
+        cvss=None,
+        description="Descrição.",
+        evidence="evidência",
+        recommendation="recomendação",
+    )
+    findings = build_findings_section(scan)
+    assert findings[0]["cvss"] == 7.5
+    assert findings[-1]["cvss"] is None
+
+
 def test_build_top_risks_sorted_by_score():
     scan = make_completed_scan_with_findings()
     top = build_top_risks(scan)

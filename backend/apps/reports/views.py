@@ -23,7 +23,7 @@ from .services import generate_report, report_file_path
 class ReportViewSet(viewsets.ModelViewSet):
     """Geração, consulta e exclusão de relatórios. Sem update (RN003)."""
 
-    queryset = Report.objects.all()
+    queryset = Report.objects.select_related("scan")
     http_method_names = ["get", "post", "delete", "head", "options"]
     filterset_fields = ["scan", "report_type", "format"]
     ordering_fields = ["created_at"]
