@@ -6,7 +6,7 @@ from typing import Any
 
 from rest_framework import serializers
 
-from .models import Finding, Scan, Target
+from .models import Finding, Scan, Target, Vulnerability
 from .validators import InvalidTarget, classify_target
 
 
@@ -43,6 +43,25 @@ class TargetSerializer(serializers.ModelSerializer):
         validated_data["kind"] = classify_target(validated_data["value"])
         validated_data["created_by"] = self.context["request"].user
         return super().create(validated_data)
+
+
+class VulnerabilitySerializer(serializers.ModelSerializer):
+    """Catálogo de vulnerabilidades conhecidas (geralmente um CVE — RF008)."""
+
+    class Meta:
+        model = Vulnerability
+        fields = (
+            "id",
+            "cve",
+            "title",
+            "severity",
+            "cvss_score",
+            "cvss_vector",
+            "description",
+            "references",
+            "created_at",
+        )
+        read_only_fields = fields
 
 
 class FindingSerializer(serializers.ModelSerializer):

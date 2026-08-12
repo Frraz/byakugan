@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from apps.assets.models import Asset, Service, Technology
 
 from .adapters import RawResult
+from .models import Finding, Scan, Vulnerability
 
 
 @dataclass
@@ -134,3 +135,59 @@ def _persist_technology(asset: Asset, data: dict) -> bool:
             service.save(update_fields=["product", "version", "updated_at"])
 
     return created
+
+
+@dataclass
+class FindingsSummary:
+    """Contagem de findings persistidos e novas entradas no catálogo de CVEs."""
+
+    findings: int = 0
+    vulnerabilities: int = 0
+
+
+def persist_findings(scan: Scan, raw_results: list[RawResult]) -> FindingsSummary:
+    """Persiste findings de vulnerabilidade a partir dos resultados do adapter.
+
+    Diferente de ``persist_results`` (inventário corrente, deduplicado), cada
+    ``Finding`` aqui é uma ocorrência **imutável** amarrada a este ``scan``
+    (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os
+    anteriores. O catálogo ``Vulnerability`` (por CVE) é reaproveitado entre
+    scans via ``get_or_create``.
+    """
+    summary = FindingsSummary()
+
+    for result in raw_results:
+        if result.kind != "vulnerability":
+            continue
+        data = result.data
+
+        asset = Asset.objects.get(id=data["asset_id"])
+        vulnerability, created = Vulnerability.objects.get_or_create(
+            cve=data["cve"],
+            defaults={
+                "title": data["title"],
+                "severity": data["severity"],
+                "cvss_score": data.get("cvss_score"),
+                "cvss_vector": data.get("cvss_vector"),
+                "description": data.get("description", ""),
+                "references": data.get("references", []),
+            },
+        )
+        if created:
+            summary.vulnerabilities += 1
+
+        Finding.objects.create(
+            scan=scan,
+            asset=asset,
+            vulnerability=vulnerability,
+            category=data.get("category", "software"),
+            title=data["title"],
+            severity=data["severity"],
+            cvss=data.get("cvss_score"),
+            description=data.get("description", ""),
+            evidence=data["evidence"],
+            recommendation=data["recommendation"],
+        )
+        summary.findings += 1
+
+    return summary

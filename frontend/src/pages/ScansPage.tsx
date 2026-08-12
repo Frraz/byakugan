@@ -115,6 +115,7 @@ function ScanForm({ onDone }: { onDone: () => void }) {
             <Select value={scanType} onChange={(e) => setScanType(e.target.value)}>
               <option value="discovery">Discovery</option>
               <option value="fingerprint">Fingerprint</option>
+              <option value="vulnerability">Vulnerability</option>
               <option value="full">Full</option>
             </Select>
           </Field>

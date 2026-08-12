@@ -139,6 +139,16 @@ SIMPLE_JWT = {
 # --- Motor de varredura (kill-switch — ver docs/security.md) ---
 BYAKUGAN_SCANNING_ENABLED = env.bool("BYAKUGAN_SCANNING_ENABLED", default=False)
 
+# --- Vulnerability Assessment (NVD — Fase 3) ---
+# API key é opcional: sem ela, o NVD limita a ~5 requisições/30s por IP; com
+# ela, o limite sobe para ~50/30s. NVD_REQUEST_DELAY_SECONDS espaça as
+# requisições do CveLookupAdapter para respeitar esse limite (RNF009).
+NVD_API_BASE_URL = env(
+    "NVD_API_BASE_URL", default="https://services.nvd.nist.gov/rest/json/cves/2.0"
+)
+NVD_API_KEY = env("NVD_API_KEY", default="")
+NVD_REQUEST_DELAY_SECONDS = env.float("NVD_REQUEST_DELAY_SECONDS", default=6.0)
+
 # --- Celery ---
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/1")

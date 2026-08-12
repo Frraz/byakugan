@@ -72,9 +72,13 @@ Adapters previstos (evolução progressiva):
 | `DnsAdapter` | `dnspython` | 1 ✅ |
 | `HttpFingerprintAdapter` | `requests` + assinaturas (`signatures.py`) | 2 ✅ |
 | `TlsAdapter` | `ssl` (stdlib) — versão/cipher negociado | 2 ✅ |
-| `CveLookupAdapter` | API NVD | 3 |
+| `CveLookupAdapter` | API NVD CVE 2.0 (`cve.py`) | 3 ✅ |
 
 > **Fingerprinting (Fase 2)**: o `HttpFingerprintAdapter` faz GET às portas HTTP(S) comuns e deriva servidor web, linguagem, framework, CMS e frontend a partir de headers (`Server`, `X-Powered-By`, cookies) e assinaturas no HTML. O `TlsAdapter` negocia TLS (stdlib `ssl`) e reporta a versão do protocolo (protocolos obsoletos ficam registrados na evidência). Ambos produzem `RawResult(kind="technology")`, normalizados em `assets.Technology` — o *technology profile* do ambiente.
+
+> **Vulnerability Assessment (Fase 3)**: o `CveLookupAdapter` **não varre a rede** — lê o technology profile já persistido do ativo (`Service.product`/`version` e `Technology.name`/`version`) e consulta a API NVD CVE 2.0 por palavra-chave (`keywordSearch="<produto> <versão>"`) para cada par produto/versão único, limitado a `NVD_MAX_RESULTS` CVEs por produto. A métrica CVSS mais recente disponível é escolhida (v3.1 > v3.0 > v2 — `cve.py:_best_metric`) e a severidade é derivada do `baseSeverity` da NVD ou, na ausência dele, dos limiares padrão de CVSS (RN004). Respeita rate limit via `NVD_REQUEST_DELAY_SECONDS` (padrão 6s sem `NVD_API_KEY`) e nunca deriva técnicas de exploração — apenas correlação informativa de versão × CVE, com uma recomendação genérica de atualização.
+>
+> **Pipeline em duas fases**: como o `CveLookupAdapter` depende de dados que os demais adapters descobrem, `tasks.run_scan` executa e **persiste** primeiro os adapters de discovery/fingerprint (`scan_type != "vulnerability"`) e só então roda os adapters de vulnerabilidade — mesmo dentro de um único scan `full`. Isso garante que o CVE lookup sempre veja o profile mais recente do próprio scan, não apenas de execuções anteriores.
 
 > Boas práticas: timeouts, rate limiting por alvo, concorrência controlada e respeito a `robots`/janela autorizada. Nunca embutir técnicas cujo propósito primário seja evasão maliciosa.
 

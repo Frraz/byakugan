@@ -107,6 +107,7 @@ export interface Finding {
   id: string;
   scan: string;
   asset: string;
+  vulnerability: string | null;
   category: string;
   title: string;
   severity: Severity;
@@ -114,6 +115,18 @@ export interface Finding {
   description: string;
   evidence: string;
   recommendation: string;
+  created_at: string;
+}
+
+export interface Vulnerability {
+  id: string;
+  cve: string | null;
+  title: string;
+  severity: Severity;
+  cvss_score: number | null;
+  cvss_vector: string | null;
+  description: string;
+  references: string[];
   created_at: string;
 }
 

@@ -13,12 +13,13 @@ import {
   Td,
   Th,
 } from "../components/ui";
-import { useAssets, useScans, useTargets } from "../hooks/useData";
+import { useAssets, useFindings, useScans, useTargets } from "../hooks/useData";
 
 export function DashboardPage() {
   const assets = useAssets();
   const scans = useScans();
   const targets = useTargets();
+  const criticalFindings = useFindings({ severity: "critical" });
 
   const scanList = scans.data?.results ?? [];
   const active = scanList.filter((s) => s.status === "running" || s.status === "pending").length;
@@ -28,11 +29,12 @@ export function DashboardPage() {
     <div>
       <PageHeader title="Dashboard" description="Visão consolidada do ambiente monitorado." />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard label="Ativos" value={assets.data?.count ?? "—"} icon={<AssetsIcon width={28} height={28} />} />
         <StatCard label="Scans ativos" value={active} accent="primary" icon={<ScansIcon width={28} height={28} />} />
         <StatCard label="Scans concluídos" value={completed} accent="success" />
         <StatCard label="Alvos" value={targets.data?.count ?? "—"} accent="accent" icon={<TargetsIcon width={28} height={28} />} />
+        <StatCard label="Findings críticos" value={criticalFindings.data?.count ?? "—"} accent="danger" />
       </div>
 
       <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Scans recentes</h2>

@@ -6,7 +6,9 @@ import pytest
 
 from apps.assets.models import Asset, Service, Technology
 from apps.scans.adapters import RawResult
-from apps.scans.parsers import persist_results
+from apps.scans.models import Finding, Vulnerability
+from apps.scans.parsers import persist_findings, persist_results
+from apps.scans.tests.factories import ScanFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -103,3 +105,69 @@ def test_web_server_technology_enriches_matching_service():
     service = Service.objects.get(port=443)
     assert service.product == "nginx"
     assert service.version == "1.24.0"
+
+
+def _vuln_result(asset_id, cve="CVE-2024-1111", **extra):
+    return RawResult(
+        kind="vulnerability",
+        data={
+            "asset_id": str(asset_id),
+            "cve": cve,
+            "title": f"{cve} em nginx 1.18.0",
+            "severity": "high",
+            "cvss_score": 7.5,
+            "cvss_vector": "CVSS:3.1/...",
+            "description": "Descrição da vulnerabilidade.",
+            "references": ["https://example.com/cve"],
+            "category": "software",
+            "evidence": "nginx 1.18.0 identificado via service (porta 443).",
+            "recommendation": "Atualizar nginx.",
+            "product": "nginx",
+            "product_version": "1.18.0",
+            **extra,
+        },
+    )
+
+
+def test_persist_findings_creates_finding_and_vulnerability():
+    asset = Asset.objects.create(ip="192.168.0.10")
+    scan = ScanFactory()
+
+    summary = persist_findings(scan, [_vuln_result(asset.id)])
+
+    assert summary.findings == 1
+    assert summary.vulnerabilities == 1
+    finding = Finding.objects.get()
+    assert finding.scan_id == scan.id
+    assert finding.asset_id == asset.id
+    assert finding.vulnerability.cve == "CVE-2024-1111"
+    assert finding.severity == "high"
+    assert finding.description
+    assert finding.evidence
+    assert finding.recommendation
+
+
+def test_persist_findings_reuses_existing_vulnerability_across_scans():
+    asset = Asset.objects.create(ip="192.168.0.10")
+    scan1 = ScanFactory()
+    scan2 = ScanFactory()
+
+    persist_findings(scan1, [_vuln_result(asset.id)])
+    summary2 = persist_findings(scan2, [_vuln_result(asset.id)])
+
+    assert summary2.vulnerabilities == 0  # catálogo reaproveitado
+    assert summary2.findings == 1
+    assert Vulnerability.objects.count() == 1
+    assert (
+        Finding.objects.filter(vulnerability__cve="CVE-2024-1111").count() == 2
+    )  # imutável por scan
+
+
+def test_persist_findings_ignores_non_vulnerability_results():
+    scan = ScanFactory()
+    raw = [RawResult(kind="service", data={"ip": "192.168.0.10", "port": 22})]
+
+    summary = persist_findings(scan, raw)
+
+    assert summary.findings == 0
+    assert not Finding.objects.exists()

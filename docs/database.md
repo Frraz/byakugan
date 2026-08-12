@@ -124,6 +124,8 @@ Vulnerabilidade conhecida (catálogo, referenciável por vários findings).
 | references | jsonb | lista de URLs |
 | created_at / updated_at | datetime | |
 
+> Populado pelo `CveLookupAdapter` (Fase 3) via correlação NVD CVE 2.0 por produto/versão. Chave natural: `cve` — reaproveitado entre scans (`get_or_create`), nunca duplicado.
+
 ### findings
 Ocorrência concreta de uma vulnerabilidade num ativo, detectada por um scan.
 
@@ -141,6 +143,8 @@ Ocorrência concreta de uma vulnerabilidade num ativo, detectada por um scan.
 | evidence | text | obrigatório |
 | recommendation | text | obrigatório |
 | created_at / updated_at | datetime | |
+
+> Diferente de `assets`/`services`/`technologies` (inventário corrente, deduplicado), cada `finding` é **imutável e amarrado ao scan que o gerou** (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os anteriores.
 
 ### reports
 Relatório gerado a partir de um scan.

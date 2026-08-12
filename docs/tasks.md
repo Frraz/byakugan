@@ -35,10 +35,11 @@
 - [~] Sistema operacional (dica via header `Server`; fingerprint de OS por rede fica para evolução futura)
 
 ### Vulnerability Assessment
-- [ ] Integração base CVE (NVD)
-- [ ] Busca por versões vulneráveis
-- [ ] Classificação CVSS
-- [ ] Evidências técnicas
+- [x] Integração base CVE (NVD CVE 2.0 — `CveLookupAdapter`, `apps/scans/cve.py`)
+- [x] Busca por versões vulneráveis (keywordSearch produto+versão sobre `Service`/`Technology`)
+- [x] Classificação CVSS (v3.1 > v3.0 > v2) e severidade (RN004)
+- [x] Evidências técnicas (produto/versão/porta/fonte) + recomendação por finding (RN008)
+- [x] API global (`/vulnerabilities/`, `/findings/`) + frontend (VulnerabilitiesPage, findings no detalhe do ativo)
 
 ## V1
 - [ ] Correlation Engine (risk score, priorização, heatmaps)

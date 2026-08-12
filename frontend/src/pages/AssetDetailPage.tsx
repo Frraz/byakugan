@@ -7,16 +7,18 @@ import {
   EmptyState,
   ErrorBanner,
   GlassPanel,
+  SeverityBadge,
   Skeleton,
   Table,
   Td,
   Th,
 } from "../components/ui";
-import { useAsset } from "../hooks/useData";
+import { useAsset, useFindings } from "../hooks/useData";
 
 export function AssetDetailPage() {
   const { id = "" } = useParams();
   const asset = useAsset(id);
+  const findings = useFindings({ asset: id });
 
   if (asset.isLoading) return <Skeleton className="h-40 w-full" />;
   if (asset.isError || !asset.data) return <ErrorBanner message="Ativo não encontrado." />;
@@ -24,6 +26,7 @@ export function AssetDetailPage() {
   const a = asset.data;
   const services = a.services ?? [];
   const technologies = a.technologies ?? [];
+  const findingsList = findings.data?.results ?? [];
 
   return (
     <div>
@@ -47,6 +50,37 @@ export function AssetDetailPage() {
           <p className="mt-1 capitalize">{a.status}</p>
         </GlassPanel>
       </div>
+
+      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Vulnerabilidades</h2>
+      {findingsList.length === 0 ? (
+        <EmptyState
+          title="Nenhum finding"
+          hint="Execute um scan de vulnerability (ou full) para correlacionar CVEs conhecidos."
+        />
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Finding</Th>
+              <Th>Severidade</Th>
+              <Th>CVSS</Th>
+              <Th>Recomendação</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {findingsList.map((f) => (
+              <tr key={f.id} className="hover:bg-white/5">
+                <Td className="font-medium text-foreground">{f.title}</Td>
+                <Td>
+                  <SeverityBadge severity={f.severity} />
+                </Td>
+                <Td className="font-mono text-primary">{f.cvss ?? "—"}</Td>
+                <Td className="max-w-md truncate text-muted">{f.recommendation}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
 
       <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Tecnologias</h2>
       {technologies.length === 0 ? (

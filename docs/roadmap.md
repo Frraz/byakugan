@@ -28,10 +28,12 @@ O Byakugan é desenvolvido incrementalmente: parte de um MVP funcional de descob
 - Modelo `Technology` (technology profile por ativo) · API `/assets/{id}/technologies/` · frontend no detalhe do ativo
 - **Resultado entregue:** mapa tecnológico do ambiente por ativo, com evidência e nível de confiança.
 
-## Fase 3 — Vulnerability Assessment (MVP)
+## Fase 3 — Vulnerability Assessment ✅ (concluída — MVP)
 **Objetivo:** relacionar ativos a vulnerabilidades conhecidas.
-- Base CVE (NVD) · busca por versões vulneráveis · classificação CVSS · evidências
-- **Resultado esperado:** lista de vulnerabilidades por ativo.
+- Adapter real `CveLookupAdapter`: correlaciona o technology profile (Fase 2) com a API NVD CVE 2.0 por palavra-chave produto/versão
+- Classificação CVSS (v3.1 > v3.0 > v2) e severidade (RN004) · catálogo `Vulnerability` reaproveitado entre scans · `Finding` imutável por scan (RN003/RN005)
+- API global `/vulnerabilities/` (catálogo) e `/findings/` (ocorrências, filtráveis por severidade/ativo/scan) · frontend com página de Vulnerabilities e seção de findings no detalhe do ativo
+- **Resultado entregue:** lista de vulnerabilidades por ativo, com CVE, CVSS, evidência e recomendação.
 
 ## Fase 4 — Correlation Engine (V1)
 **Objetivo:** transformar vulnerabilidades em risco de negócio.

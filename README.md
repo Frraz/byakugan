@@ -40,8 +40,8 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 | 0 | Fundação (Docker, Postgres, Redis, health, logging) | ✅ Concluída |
 | 0 | Auth JWT + RBAC + Auditoria imutável + CI | ✅ Concluída |
 | 1 | Asset Discovery (targets, descoberta de hosts/serviços, inventário) | ✅ Concluída |
-| 2 | Fingerprinting (OS, servidores, frameworks) | ⏳ Planejada |
-| 3 | Vulnerability Assessment (CVE/NVD, CVSS, findings) | ⏳ Planejada |
+| 2 | Fingerprinting (servidores, frameworks, CMS, TLS, technology profile) | ✅ Concluída |
+| 3 | Vulnerability Assessment (CVE/NVD, CVSS, findings) | ✅ Concluída |
 | 4 | Correlation Engine (risk score, priorização, heatmaps) | ⏳ Planejada |
 | 5 | Reporting (PDF/CSV/JSON) | ⏳ Planejada |
 | 6 | Knowledge Base | ⏳ Planejada |
@@ -49,15 +49,16 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 
 Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para o detalhamento.
 
-## Funcionalidades entregues (Fases 0–1)
+## Funcionalidades entregues (Fases 0–3)
 
 - **Autenticação JWT** — login, refresh, logout com blacklist, `me`; criação de usuários restrita a admin.
 - **RBAC** — papéis `admin` / `analyst` / `viewer` aplicados por permission classes em cada endpoint.
 - **Auditoria imutável** — todo evento sensível (login, criação/cancelamento de scan, cadastro/exclusão de alvo) é registrado em uma trilha append-only, consultável por admins.
 - **Cadastro de alvos (`Target`)** — autorização reutilizável, validação de formato (host/domínio/IP/CIDR) e escopo.
-- **Scans de descoberta** — enfileiramento assíncrono, máquina de estados (`pending → running → completed/failed/cancelled`), cancelamento e polling de status; adapters reais de **descoberta de portas** (socket TCP) e **DNS** (dnspython).
-- **Inventário de ativos** — hosts e serviços descobertos, com histórico imutável.
-- **Frontend completo** — login, dashboard SOC, targets, scans, assets e telas de detalhe, na identidade visual oficial (ver abaixo).
+- **Scans de descoberta, fingerprint e vulnerability** — enfileiramento assíncrono, máquina de estados (`pending → running → completed/failed/cancelled`), cancelamento e polling de status; adapters reais de **descoberta de portas** (socket TCP), **DNS** (dnspython), **fingerprint HTTP** (headers + assinaturas no HTML), **TLS** (versão/cipher negociado via `ssl`) e **correlação de CVEs** (NVD CVE 2.0, por produto/versão do technology profile).
+- **Inventário de ativos** — hosts, serviços e tecnologias descobertos (*technology profile*: SO, servidor web, framework, linguagem, CMS, frontend, TLS), com histórico imutável.
+- **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan, com evidência e recomendação (RN008); pipeline em duas fases garante que a correlação de CVEs sempre leia o profile mais recente do próprio scan.
+- **Frontend completo** — login, dashboard SOC (com KPI de findings críticos), targets, scans, assets (tecnologias + vulnerabilidades) e página de Vulnerabilities, na identidade visual oficial (ver abaixo).
 
 ## Identidade visual
 
@@ -79,7 +80,7 @@ O logo é renderizado em SVG vetorial ([`frontend/src/components/brand/Logo.tsx`
 | Frontend | React, TypeScript, Vite, TailwindCSS, React Query, Zustand, React Router |
 | Backend | Python 3.13+, Django, Django REST Framework, SimpleJWT, django-filter |
 | Assíncrono | Celery, Redis |
-| Scanners | socket (TCP connect), dnspython |
+| Scanners | socket (TCP connect), dnspython, requests (HTTP fingerprint + NVD), ssl (TLS) |
 | Banco / busca | PostgreSQL, OpenSearch (futuro) |
 | Infra | Docker, Docker Compose |
 
@@ -176,6 +177,9 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 | GET | `/api/scans/{id}/findings/` | Findings do scan | Autenticado |
 | GET | `/api/assets/` | Inventário de ativos | Autenticado |
 | GET | `/api/assets/{id}/services/` | Serviços de um ativo | Autenticado |
+| GET | `/api/assets/{id}/technologies/` | Tecnologias identificadas (technology profile) | Autenticado |
+| GET | `/api/vulnerabilities/` | Catálogo de vulnerabilidades (CVE/CVSS) | Autenticado |
+| GET | `/api/findings/` | Findings do ambiente (filtros: severity/asset/scan) | Autenticado |
 | GET | `/api/audit-logs/` | Trilha de auditoria | admin |
 
 ---
@@ -196,8 +200,8 @@ Ver [`docs/testing.md`](docs/testing.md).
 backend/           # Django + DRF + Celery
   apps/core/       # BaseModel, AuditLog, permissions, health, logging
   apps/accounts/   # User (email + RBAC), auth JWT
-  apps/assets/     # Asset, Service (inventário)
-  apps/scans/      # Target, Scan, Finding, adapters, services, tasks
+  apps/assets/     # Asset, Service, Technology (inventário + technology profile)
+  apps/scans/      # Target, Scan, Vulnerability, Finding, adapters (discovery/fingerprint/vulnerability), signatures, cve, services, tasks
 frontend/          # React + TS + Vite (auth, layout, páginas, brand)
 docs/              # documentação canônica (comece por docs/architecture.md)
 infra/             # configs de produção

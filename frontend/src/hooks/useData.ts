@@ -11,6 +11,7 @@ import type {
   Service,
   Target,
   Technology,
+  Vulnerability,
 } from "../lib/types";
 
 // --- Targets ---
@@ -118,5 +119,21 @@ export function useAssetTechnologies(id: string) {
   return useQuery({
     queryKey: ["asset", id, "technologies"],
     queryFn: () => apiFetch<Technology[]>(`/assets/${id}/technologies/`),
+  });
+}
+
+// --- Vulnerabilities & Findings ---
+
+export function useVulnerabilities(params?: { severity?: string; search?: string }) {
+  return useQuery({
+    queryKey: ["vulnerabilities", params],
+    queryFn: () => apiFetch<Paginated<Vulnerability>>("/vulnerabilities/", { params }),
+  });
+}
+
+export function useFindings(params?: { severity?: string; asset?: string; scan?: string }) {
+  return useQuery({
+    queryKey: ["findings", params],
+    queryFn: () => apiFetch<Paginated<Finding>>("/findings/", { params }),
   });
 }

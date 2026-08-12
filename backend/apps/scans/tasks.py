@@ -16,7 +16,7 @@ from apps.core.audit import record_audit
 
 from .adapters import ScanContext, get_adapters_for
 from .models import Scan
-from .parsers import persist_results
+from .parsers import persist_findings, persist_results
 from .services import transition
 
 logger = logging.getLogger("byakugan.scans")
@@ -56,10 +56,22 @@ def run_scan(scan_id: str) -> dict:
     )
 
     try:
-        raw_results = []
-        for adapter in get_adapters_for(scan.scan_type):
-            raw_results.extend(adapter.run(scan.target, context))
-        summary = persist_results(raw_results)
+        # Pipeline em duas fases: discovery/fingerprint persistem PRIMEIRO, para
+        # que o CveLookupAdapter (fase "vulnerability") leia o technology profile
+        # já atualizado do ativo — mesmo dentro de um único scan "full".
+        adapters = get_adapters_for(scan.scan_type)
+        profile_adapters = [a for a in adapters if a.scan_type != "vulnerability"]
+        vulnerability_adapters = [a for a in adapters if a.scan_type == "vulnerability"]
+
+        profile_results = []
+        for adapter in profile_adapters:
+            profile_results.extend(adapter.run(scan.target, context))
+        summary = persist_results(profile_results)
+
+        vulnerability_results = []
+        for adapter in vulnerability_adapters:
+            vulnerability_results.extend(adapter.run(scan.target, context))
+        findings_summary = persist_findings(scan, vulnerability_results)
     except Exception as exc:  # noqa: BLE001 — falha de scan não deve derrubar o worker
         logger.exception("scan_failed", extra={"scan_id": str(scan.id)})
         transition(scan, Scan.Status.FAILED, reason=str(exc))
@@ -81,10 +93,12 @@ def run_scan(scan_id: str) -> dict:
         assets=summary.assets,
         services=summary.services,
         technologies=summary.technologies,
+        findings=findings_summary.findings,
     )
     return {
         "status": scan.status,
         "assets": summary.assets,
         "services": summary.services,
         "technologies": summary.technologies,
+        "findings": findings_summary.findings,
     }

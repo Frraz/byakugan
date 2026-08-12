@@ -14,12 +14,13 @@ from rest_framework.response import Response
 from apps.core.audit import client_ip, record_audit
 from apps.core.permissions import IsAnalystOrAdmin, ReadOnlyOrAnalyst
 
-from .models import Scan, Target
+from .models import Finding, Scan, Target, Vulnerability
 from .serializers import (
     FindingSerializer,
     ScanCreateSerializer,
     ScanSerializer,
     TargetSerializer,
+    VulnerabilitySerializer,
 )
 from .services import InvalidTransition, TargetOutOfScope, cancel_scan, create_scan
 from .tasks import run_scan
@@ -150,3 +151,24 @@ class ScanViewSet(viewsets.ModelViewSet):
 
         services = Service.objects.filter(asset_id__in=asset_ids)
         return Response(ServiceSerializer(services, many=True).data)
+
+
+class VulnerabilityViewSet(viewsets.ReadOnlyModelViewSet):
+    """Catálogo de vulnerabilidades conhecidas — somente leitura (RF008)."""
+
+    queryset = Vulnerability.objects.all()
+    serializer_class = VulnerabilitySerializer
+    permission_classes = [ReadOnlyOrAnalyst]
+    filterset_fields = ["severity"]
+    search_fields = ["cve", "title"]
+    ordering_fields = ["created_at", "cvss_score", "severity"]
+
+
+class FindingViewSet(viewsets.ReadOnlyModelViewSet):
+    """Findings do ambiente — somente leitura (RF008)."""
+
+    queryset = Finding.objects.all()
+    serializer_class = FindingSerializer
+    permission_classes = [ReadOnlyOrAnalyst]
+    filterset_fields = ["severity", "asset", "scan"]
+    ordering_fields = ["created_at", "severity", "cvss"]

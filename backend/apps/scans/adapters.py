@@ -10,6 +10,7 @@ Política de Autorização de Alvos — nenhuma varredura fora do escopo autoriz
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -352,14 +353,149 @@ class TlsAdapter(ScannerAdapter):
         ]
 
 
+# Máximo de CVEs considerados por produto/versão — evita flooding de findings
+# a partir de um único match amplo de palavra-chave na NVD.
+NVD_MAX_RESULTS = 5
+NVD_TIMEOUT = 10.0
+
+
+class CveLookupAdapter(ScannerAdapter):
+    """Correlaciona produtos/versões já identificados com CVEs conhecidos (NVD).
+
+    Diferente dos demais adapters, não varre a rede diretamente: lê o
+    *technology profile* já persistido do ativo (``Service.product``/``version``
+    e ``Technology.name``/``version``) e consulta a API NVD CVE 2.0 por
+    palavra-chave para cada produto/versão único. Por isso só produz resultados
+    úteis quando executado **depois** de um discovery/fingerprint sobre o mesmo
+    alvo — a orquestração (``tasks.run_scan``) garante essa ordem em scans
+    ``full``, persistindo o profile antes de rodar este adapter.
+
+    Respeita rate limit da NVD (`NVD_REQUEST_DELAY_SECONDS`) e nunca deriva
+    técnicas de exploração — apenas correlação informativa de versão × CVE.
+    """
+
+    name = "cve-lookup"
+    scan_type = "vulnerability"
+
+    def __init__(
+        self,
+        *,
+        request_delay: float | None = None,
+        max_results: int = NVD_MAX_RESULTS,
+    ) -> None:
+        from django.conf import settings
+
+        self.base_url = settings.NVD_API_BASE_URL
+        self.api_key = settings.NVD_API_KEY
+        self.request_delay = (
+            settings.NVD_REQUEST_DELAY_SECONDS if request_delay is None else request_delay
+        )
+        self.max_results = max_results
+
+    def _query_nvd(self, keyword: str) -> list[dict[str, Any]]:
+        """Busca CVEs por palavra-chave na NVD. Lista vazia em qualquer falha."""
+        import requests
+        from requests.exceptions import RequestException
+
+        headers = {"User-Agent": "Byakugan-Scanner/0.1 (authorized assessment)"}
+        if self.api_key:
+            headers["apiKey"] = self.api_key
+        try:
+            response = requests.get(
+                self.base_url,
+                params={"keywordSearch": keyword, "resultsPerPage": self.max_results},
+                headers=headers,
+                timeout=NVD_TIMEOUT,
+            )
+            response.raise_for_status()
+            return response.json().get("vulnerabilities", [])
+        except (RequestException, ValueError):
+            return []
+
+    @staticmethod
+    def _collect_products(asset: Any) -> list[tuple[str, str, str, int | None]]:
+        """Reúne pares (produto, versão) únicos do ativo — serviços e tecnologias."""
+        products: list[tuple[str, str, str, int | None]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for service in asset.services.all():
+            if not service.product or not service.version:
+                continue
+            key = (service.product.lower(), service.version)
+            if key not in seen:
+                seen.add(key)
+                products.append((service.product, service.version, "service", service.port))
+
+        for tech in asset.technologies.all():
+            if not tech.name or not tech.version:
+                continue
+            key = (tech.name.lower(), tech.version)
+            if key not in seen:
+                seen.add(key)
+                products.append((tech.name, tech.version, "technology", None))
+
+        return products
+
+    def run(self, target: str, context: ScanContext) -> list[RawResult]:
+        """Correlaciona o technology profile do ativo com CVEs da NVD."""
+        from django.db.models import Q
+
+        from apps.assets.models import Asset
+
+        from .cve import map_cve_item
+
+        asset = Asset.objects.filter(Q(ip=target) | Q(hostname=target) | Q(domain=target)).first()
+        if asset is None:
+            return []
+
+        products = self._collect_products(asset)
+        results: list[RawResult] = []
+
+        for index, (name, version, source, port) in enumerate(products):
+            if index > 0 and self.request_delay > 0:
+                time.sleep(self.request_delay)
+
+            for item in self._query_nvd(f"{name} {version}"):
+                mapped = map_cve_item(item)
+                if mapped is None:
+                    continue
+                port_note = f" (porta {port})" if port else ""
+                evidence = (
+                    f"{name} {version} identificado via {source}{port_note}. "
+                    f'NVD keywordSearch="{name} {version}".'
+                )
+                recommendation = (
+                    f"Atualizar {name} para uma versão corrigida. Consultar as "
+                    f"referências do CVE {mapped['cve']} para detalhes de mitigação."
+                )
+                results.append(
+                    RawResult(
+                        kind="vulnerability",
+                        data={
+                            **mapped,
+                            "title": f"{mapped['cve']} em {name} {version}",
+                            "category": "software",
+                            "evidence": evidence,
+                            "recommendation": recommendation,
+                            "asset_id": str(asset.id),
+                            "product": name,
+                            "product_version": version,
+                        },
+                    )
+                )
+        return results
+
+
 # Registry: mapeia o tipo de scan aos adapters que o compõem.
 DISCOVERY_ADAPTERS: list[ScannerAdapter] = [DnsAdapter(), PortDiscoveryAdapter()]
 FINGERPRINT_ADAPTERS: list[ScannerAdapter] = [HttpFingerprintAdapter(), TlsAdapter()]
+VULNERABILITY_ADAPTERS: list[ScannerAdapter] = [CveLookupAdapter()]
 
 ADAPTERS_BY_SCAN_TYPE: dict[str, list[ScannerAdapter]] = {
     "discovery": DISCOVERY_ADAPTERS,
     "fingerprint": FINGERPRINT_ADAPTERS,
-    "full": [*DISCOVERY_ADAPTERS, *FINGERPRINT_ADAPTERS],
+    "vulnerability": VULNERABILITY_ADAPTERS,
+    "full": [*DISCOVERY_ADAPTERS, *FINGERPRINT_ADAPTERS, *VULNERABILITY_ADAPTERS],
 }
 
 
