@@ -45,7 +45,8 @@ Workers executam módulos independentes via **scanner adapters**:
 - **Discovery Module** → hosts, DNS, subdomínios, serviços → *Asset Inventory*.
 - **Fingerprint Module** → OS, frameworks, servidores, tecnologias → *Technology Profile*.
 - **Vulnerability Module** → busca CVE, CVSS, correlação de versões → *Findings*.
-- **Correlation Module** → agrupa, deduplica, prioriza → *Risk Assessment*.
+
+O **Correlation Module** (Risk Assessment) não roda como parte da execução do scan — é computado **sob demanda** a cada leitura, sempre a partir dos `Finding` mais recentes. Ver seção própria abaixo.
 
 ## Scanner Adapters (integração real progressiva)
 
@@ -95,3 +96,36 @@ Severidade: `critical` · `high` · `medium` · `low` · `info`.
 
 ## Histórico
 Nenhum scan é sobrescrito (RN003). Todos os resultados permanecem disponíveis para auditoria.
+
+## Correlation Engine (Risk Score — Fase 4)
+
+Transforma findings em risco de negócio: agrupa por ativo/ambiente, prioriza automaticamente e agrupa por criticidade e categoria. Implementado em `apps/scans/correlation.py` (regras puras, sem I/O) e exposto via `GET /api/risk/overview/` (`apps/scans/views.py:RiskOverviewView`).
+
+**Decisão de design**: o risco **não é persistido** — é recomputado a cada requisição a partir dos `Finding` já salvos. Como `Finding` é imutável por scan (RN003/RN005), qualquer leitura de risco já reflete exatamente o estado atual sem precisar de invalidação de cache ou de um job de recálculo assíncrono.
+
+### Fórmula do `risk_score` (0–100)
+
+Para um conjunto de findings (de um ativo ou do ambiente inteiro):
+
+```
+peso(finding) = finding.cvss se disponível, senão um score-equivalente por severidade:
+                critical → 9.5 · high → 8.0 · medium → 5.5 · low → 2.0 · info → 0.0
+
+risk_score = min(100, soma dos pesos de todos os findings)
+```
+
+A soma cresce com a **quantidade e a gravidade** dos findings, mas satura em 100 — um único finding crítico não deveria (e não deve) levar o score ao máximo; são necessários vários findings graves acumulados. `risk_level` classifica o score na mesma banda usada para CVSS, só que ×10 (`cve.severity_bucket`, escalado):
+
+| risk_score | risk_level |
+| --- | --- |
+| ≥ 90 | `critical` |
+| ≥ 70 | `high` |
+| ≥ 40 | `medium` |
+| > 0 | `low` |
+| 0 | `info` |
+
+### Saídas
+
+- **Priorização automática**: `top_assets` — risk assessment por ativo, ordenado por `risk_score` decrescente.
+- **Agrupamento por criticidade**: `summary.severity` — contagem de findings do ambiente por severidade.
+- **Heatmap**: `heatmap` — contagem de findings por `(category, severity)`. `category` é o campo livre já usado em `Finding` (hoje `software` via `CveLookupAdapter`; adapters futuros podem reportar categorias mais específicas como `tls`/`web`/`network`).

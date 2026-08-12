@@ -42,14 +42,14 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 | 1 | Asset Discovery (targets, descoberta de hosts/serviços, inventário) | ✅ Concluída |
 | 2 | Fingerprinting (servidores, frameworks, CMS, TLS, technology profile) | ✅ Concluída |
 | 3 | Vulnerability Assessment (CVE/NVD, CVSS, findings) | ✅ Concluída |
-| 4 | Correlation Engine (risk score, priorização, heatmaps) | ⏳ Planejada |
+| 4 | Correlation Engine (risk score, priorização, heatmaps) | ✅ Concluída |
 | 5 | Reporting (PDF/CSV/JSON) | ⏳ Planejada |
 | 6 | Knowledge Base | ⏳ Planejada |
 | 7 | AI Assistant | ⏳ Planejada |
 
 Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para o detalhamento.
 
-## Funcionalidades entregues (Fases 0–3)
+## Funcionalidades entregues (Fases 0–4)
 
 - **Autenticação JWT** — login, refresh, logout com blacklist, `me`; criação de usuários restrita a admin.
 - **RBAC** — papéis `admin` / `analyst` / `viewer` aplicados por permission classes em cada endpoint.
@@ -58,7 +58,8 @@ Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para
 - **Scans de descoberta, fingerprint e vulnerability** — enfileiramento assíncrono, máquina de estados (`pending → running → completed/failed/cancelled`), cancelamento e polling de status; adapters reais de **descoberta de portas** (socket TCP), **DNS** (dnspython), **fingerprint HTTP** (headers + assinaturas no HTML), **TLS** (versão/cipher negociado via `ssl`) e **correlação de CVEs** (NVD CVE 2.0, por produto/versão do technology profile).
 - **Inventário de ativos** — hosts, serviços e tecnologias descobertos (*technology profile*: SO, servidor web, framework, linguagem, CMS, frontend, TLS), com histórico imutável.
 - **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan, com evidência e recomendação (RN008); pipeline em duas fases garante que a correlação de CVEs sempre leia o profile mais recente do próprio scan.
-- **Frontend completo** — login, dashboard SOC (com KPI de findings críticos), targets, scans, assets (tecnologias + vulnerabilidades) e página de Vulnerabilities, na identidade visual oficial (ver abaixo).
+- **Correlation Engine** — risk score (0–100) e priorização automática de ativos, agrupamento por criticidade e heatmap por categoria, computados sob demanda a partir dos findings (sem cache a invalidar — sempre atualizado).
+- **Frontend completo** — login, dashboard SOC (KPIs de risco, ativos priorizados, heatmap), targets, scans, assets (tecnologias + vulnerabilidades) e página de Vulnerabilities, na identidade visual oficial (ver abaixo).
 
 ## Identidade visual
 
@@ -180,6 +181,7 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 | GET | `/api/assets/{id}/technologies/` | Tecnologias identificadas (technology profile) | Autenticado |
 | GET | `/api/vulnerabilities/` | Catálogo de vulnerabilidades (CVE/CVSS) | Autenticado |
 | GET | `/api/findings/` | Findings do ambiente (filtros: severity/asset/scan) | Autenticado |
+| GET | `/api/risk/overview/` | Risk score, ativos priorizados e heatmap (Correlation Engine) | Autenticado |
 | GET | `/api/audit-logs/` | Trilha de auditoria | admin |
 
 ---
@@ -201,7 +203,7 @@ backend/           # Django + DRF + Celery
   apps/core/       # BaseModel, AuditLog, permissions, health, logging
   apps/accounts/   # User (email + RBAC), auth JWT
   apps/assets/     # Asset, Service, Technology (inventário + technology profile)
-  apps/scans/      # Target, Scan, Vulnerability, Finding, adapters (discovery/fingerprint/vulnerability), signatures, cve, services, tasks
+  apps/scans/      # Target, Scan, Vulnerability, Finding, adapters (discovery/fingerprint/vulnerability), signatures, cve, correlation (risk score), services, tasks
 frontend/          # React + TS + Vite (auth, layout, páginas, brand)
 docs/              # documentação canônica (comece por docs/architecture.md)
 infra/             # configs de produção

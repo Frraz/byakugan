@@ -173,6 +173,42 @@ Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`.
 
 ---
 
+## Risk & Correlation (Correlation Engine)
+
+### `GET /api/risk/overview/`
+Risk assessment computado sob demanda a partir dos `Finding` persistidos — não é um recurso armazenado, então reflete sempre os dados mais recentes. Ver `docs/scanning-engine.md` (seção Correlation Engine) para a fórmula do `risk_score`. Filtro: `?limit=` (quantos ativos priorizados retornar; padrão `10`).
+```json
+// 200
+{
+  "summary": {
+    "assets": 12,
+    "findings": 47,
+    "severity": { "critical": 5, "high": 18, "medium": 32, "low": 45, "info": 10 },
+    "risk_score": 82.0,
+    "risk_level": "high"
+  },
+  "top_assets": [
+    {
+      "asset": "<asset-id>",
+      "ip": "192.168.0.10",
+      "hostname": "web-01",
+      "domain": null,
+      "risk_score": 95.0,
+      "risk_level": "critical",
+      "findings": 6,
+      "severity": { "critical": 1, "high": 3, "medium": 2, "low": 0, "info": 0 }
+    }
+  ],
+  "heatmap": [
+    { "category": "tls", "severity": "medium", "count": 3 },
+    { "category": "software", "severity": "high", "count": 12 }
+  ]
+}
+```
+> `top_assets` vem ordenado por `risk_score` decrescente (priorização automática). `heatmap` é uma lista plana de células `{category, severity, count}` — o frontend faz o pivô para a grade.
+
+---
+
 ## Reports
 
 ### `GET /api/reports/`

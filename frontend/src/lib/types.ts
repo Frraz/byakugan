@@ -136,3 +136,44 @@ export interface Paginated<T> {
   previous: string | null;
   results: T[];
 }
+
+// --- Correlation Engine (risk score, priorização, heatmap) ---
+
+export interface SeverityCounts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+}
+
+export interface RiskSummary {
+  assets: number;
+  findings: number;
+  severity: SeverityCounts;
+  risk_score: number;
+  risk_level: Severity;
+}
+
+export interface AssetRisk {
+  asset: string;
+  ip: string | null;
+  hostname: string | null;
+  domain: string | null;
+  risk_score: number;
+  risk_level: Severity;
+  severity: SeverityCounts;
+  findings: number;
+}
+
+export interface HeatmapCell {
+  category: string;
+  severity: Severity;
+  count: number;
+}
+
+export interface RiskOverview {
+  summary: RiskSummary;
+  top_assets: AssetRisk[];
+  heatmap: HeatmapCell[];
+}

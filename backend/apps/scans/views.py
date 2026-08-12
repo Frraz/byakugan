@@ -5,15 +5,19 @@ Views finas: a lógica de negócio vive em ``services`` e ``tasks``.
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.core.audit import client_ip, record_audit
 from apps.core.permissions import IsAnalystOrAdmin, ReadOnlyOrAnalyst
 
+from .correlation import compute_asset_risk, compute_heatmap, compute_risk
 from .models import Finding, Scan, Target, Vulnerability
 from .serializers import (
     FindingSerializer,
@@ -25,6 +29,8 @@ from .serializers import (
 from .services import InvalidTransition, TargetOutOfScope, cancel_scan, create_scan
 from .tasks import run_scan
 from .validators import InvalidTarget
+
+DEFAULT_TOP_ASSETS_LIMIT = 10
 
 
 class TargetViewSet(viewsets.ModelViewSet):
@@ -172,3 +178,42 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [ReadOnlyOrAnalyst]
     filterset_fields = ["severity", "asset", "scan"]
     ordering_fields = ["created_at", "severity", "cvss"]
+
+
+class RiskOverviewView(APIView):
+    """Correlation Engine: risk score, priorização e heatmap (Fase 4).
+
+    Computado sob demanda a partir dos ``Finding`` persistidos — não há
+    modelo de "risco" próprio, então a resposta nunca fica desatualizada.
+    Ver docs/scanning-engine.md (seção Correlation Engine).
+    """
+
+    permission_classes = [ReadOnlyOrAnalyst]
+
+    def get(self, request: Request) -> Response:
+        from apps.assets.models import Asset
+
+        try:
+            limit = int(request.query_params.get("limit", DEFAULT_TOP_ASSETS_LIMIT))
+        except ValueError:
+            limit = DEFAULT_TOP_ASSETS_LIMIT
+
+        rows = list(
+            Finding.objects.values(
+                "asset_id",
+                "asset__ip",
+                "asset__hostname",
+                "asset__domain",
+                "severity",
+                "cvss",
+                "category",
+            )
+        )
+
+        return Response(
+            {
+                "summary": {"assets": Asset.objects.count(), **asdict(compute_risk(rows))},
+                "top_assets": compute_asset_risk(rows)[:limit],
+                "heatmap": compute_heatmap(rows),
+            }
+        )

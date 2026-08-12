@@ -7,6 +7,7 @@ import type {
   Asset,
   Finding,
   Paginated,
+  RiskOverview,
   Scan,
   Service,
   Target,
@@ -135,5 +136,14 @@ export function useFindings(params?: { severity?: string; asset?: string; scan?:
   return useQuery({
     queryKey: ["findings", params],
     queryFn: () => apiFetch<Paginated<Finding>>("/findings/", { params }),
+  });
+}
+
+// --- Correlation Engine ---
+
+export function useRiskOverview(limit = 5) {
+  return useQuery({
+    queryKey: ["risk-overview", limit],
+    queryFn: () => apiFetch<RiskOverview>("/risk/overview/", { params: { limit } }),
   });
 }

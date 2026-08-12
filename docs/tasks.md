@@ -42,10 +42,10 @@
 - [x] API global (`/vulnerabilities/`, `/findings/`) + frontend (VulnerabilitiesPage, findings no detalhe do ativo)
 
 ## V1
-- [ ] Correlation Engine (risk score, priorização, heatmaps)
+- [x] Correlation Engine (risk score 0–100, priorização automática por ativo, agrupamento por criticidade, heatmap por categoria — `apps/scans/correlation.py` + `GET /api/risk/overview/`, computado sob demanda)
 - [ ] Reporting (PDF executivo/técnico, CSV, JSON)
 - [ ] Knowledge Base
-- [ ] Dashboards executivo e técnico
+- [~] Dashboards executivo e técnico (Dashboard SOC com KPIs de risco, ativos priorizados e heatmap entregue; visão executiva dedicada fica para Reporting/Fase 5)
 - [ ] AI Assistant (explicação, correção, resumo)
 - [ ] Cobertura de testes > 80%
 

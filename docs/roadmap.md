@@ -35,9 +35,11 @@ O Byakugan é desenvolvido incrementalmente: parte de um MVP funcional de descob
 - API global `/vulnerabilities/` (catálogo) e `/findings/` (ocorrências, filtráveis por severidade/ativo/scan) · frontend com página de Vulnerabilities e seção de findings no detalhe do ativo
 - **Resultado entregue:** lista de vulnerabilidades por ativo, com CVE, CVSS, evidência e recomendação.
 
-## Fase 4 — Correlation Engine (V1)
+## Fase 4 — Correlation Engine ✅ (concluída — V1)
 **Objetivo:** transformar vulnerabilidades em risco de negócio.
-- Risk score · priorização automática · agrupamento por criticidade · heatmaps
+- Risk score (0–100, soma de CVSS saturada) · priorização automática de ativos · agrupamento por criticidade · heatmap por categoria
+- Computado sob demanda a partir dos `Finding` (sem modelo próprio, sempre atualizado) · API `GET /api/risk/overview/` · Dashboard com KPIs de risco, ativos priorizados e heatmap
+- **Resultado entregue:** o usuário vê, de relance, quais ativos são mais críticos e onde o risco está concentrado.
 
 ## Fase 5 — Reporting (V1)
 **Objetivo:** relatórios profissionais.
