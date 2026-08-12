@@ -7,7 +7,9 @@ import pytest
 from apps.reports.models import Report
 from apps.reports.payload import (
     build_asset_inventory,
+    build_executive_narrative,
     build_findings_section,
+    build_references,
     build_related_knowledge,
     build_report_payload,
     build_scan_metadata,
@@ -76,6 +78,36 @@ def test_build_scan_metadata_includes_authorization():
     meta = build_scan_metadata(scan)
     assert meta["status"] == "completed"
     assert meta["authorized_by"] == scan.authorized_by
+
+
+def test_build_executive_narrative_mentions_target_and_risk():
+    scan = make_completed_scan_with_findings()
+    payload = build_report_payload(scan, Report.ReportType.EXECUTIVE)
+    narrative = build_executive_narrative(payload)
+    assert scan.target in narrative
+    assert "Risk Score" in narrative
+    assert "finding" in narrative.lower()
+
+
+def test_build_references_includes_nvd_link():
+    scan = make_completed_scan_with_findings()
+    refs = build_references(scan)
+    assert len(refs) == 1
+    assert refs[0]["cve"] == "CVE-2024-1111"
+    assert any("nvd.nist.gov/vuln/detail/CVE-2024-1111" in link for link in refs[0]["links"])
+    assert "https://example.com/cve" in refs[0]["links"]
+
+
+def test_executive_payload_includes_narrative():
+    scan = make_completed_scan_with_findings()
+    payload = build_report_payload(scan, Report.ReportType.EXECUTIVE)
+    assert payload["narrative"]
+
+
+def test_technical_payload_includes_references():
+    scan = make_completed_scan_with_findings()
+    payload = build_report_payload(scan, Report.ReportType.TECHNICAL)
+    assert len(payload["references"]) == 1
 
 
 def test_executive_payload_has_top_risks_and_heatmap_not_findings():

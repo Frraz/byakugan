@@ -119,6 +119,37 @@ def build_related_knowledge(scan: Scan) -> list[dict[str, Any]]:
     return articles
 
 
+def build_references(scan: Scan) -> list[dict[str, Any]]:
+    """Referências (CVE + links) das vulnerabilidades correlacionadas no scan.
+
+    Uma entrada por CVE distinto, com o link para o NVD e as ``references``
+    do catálogo (docs/reporting.md — seção Referências).
+    """
+    seen: set[str] = set()
+    refs: list[dict[str, Any]] = []
+    findings = scan.findings.select_related("vulnerability").filter(vulnerability__isnull=False)
+    for finding in findings:
+        vuln = finding.vulnerability
+        key = vuln.cve or str(vuln.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        links = list(vuln.references or [])
+        if vuln.cve:
+            nvd = f"https://nvd.nist.gov/vuln/detail/{vuln.cve}"
+            if nvd not in links:
+                links.insert(0, nvd)
+        refs.append(
+            {
+                "cve": vuln.cve,
+                "title": vuln.title,
+                "cvss_vector": vuln.cvss_vector,
+                "links": links,
+            }
+        )
+    return refs
+
+
 def build_scan_metadata(scan: Scan) -> dict[str, Any]:
     """Metadados de execução do scan (relatório técnico)."""
     return {
@@ -129,6 +160,45 @@ def build_scan_metadata(scan: Scan) -> dict[str, Any]:
         "started_at": scan.started_at.isoformat() if scan.started_at else None,
         "finished_at": scan.finished_at.isoformat() if scan.finished_at else None,
     }
+
+
+_RISK_LEVEL_PT = {
+    "critical": "crítico",
+    "high": "alto",
+    "medium": "médio",
+    "low": "baixo",
+    "info": "informativo",
+}
+
+
+def build_executive_narrative(payload: dict[str, Any]) -> str:
+    """Parágrafo narrativo do sumário executivo, gerado a partir do resumo.
+
+    Texto legível para a banca/gestão a partir dos números do ``summary`` —
+    sem jargão, destacando o volume por severidade e o nível de risco.
+    """
+    summary = payload["summary"]
+    severity = summary["severity"]
+    total = sum(severity.values())
+    level_pt = _RISK_LEVEL_PT.get(summary["risk_level"], summary["risk_level"])
+
+    if total == 0:
+        return (
+            f"A análise do alvo {payload['target']} não identificou vulnerabilidades "
+            f"em {summary['assets']} ativo(s) avaliado(s). O risco atual é considerado "
+            f"{level_pt} (Risk Score {summary['risk_score']}/100)."
+        )
+
+    destaque = severity["critical"] or severity["high"]
+    faixa = "críticas" if severity["critical"] else "altas" if severity["high"] else "relevantes"
+    return (
+        f"A análise do alvo {payload['target']} identificou {total} finding(s) "
+        f"em {summary['assets']} ativo(s), dos quais {destaque} de severidade {faixa} "
+        f"({severity['critical']} crítica(s) e {severity['high']} alta(s)). "
+        f"O nível de risco consolidado é {level_pt}, com Risk Score de "
+        f"{summary['risk_score']}/100. Recomenda-se priorizar a remediação dos ativos "
+        f"listados a seguir, começando pelos de maior pontuação."
+    )
 
 
 def build_report_payload(scan: Scan, report_type: str) -> dict[str, Any]:
@@ -149,10 +219,12 @@ def build_report_payload(scan: Scan, report_type: str) -> dict[str, Any]:
     if report_type == Report.ReportType.EXECUTIVE:
         payload["top_risks"] = build_top_risks(scan)
         payload["heatmap"] = compute_heatmap(list(scan.findings.values("category", "severity")))
+        payload["narrative"] = build_executive_narrative(payload)
     else:
         payload["scan"] = build_scan_metadata(scan)
         payload["assets"] = build_asset_inventory(scan)
         payload["findings"] = build_findings_section(scan)
         payload["knowledge_articles"] = build_related_knowledge(scan)
+        payload["references"] = build_references(scan)
 
     return payload
