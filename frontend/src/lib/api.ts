@@ -44,11 +44,13 @@ async function refreshAccessToken(): Promise<string | null> {
   return data.access;
 }
 
+type ParamValue = string | number | boolean | null | undefined;
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
   auth?: boolean;
-  params?: Record<string, string | number | boolean | undefined>;
+  params?: Record<string, ParamValue>;
 }
 
 export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Promise<T> {
@@ -57,7 +59,7 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
   const url = new URL(`${API_BASE_URL}${path}`, window.location.origin);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
+      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
     }
   }
 
@@ -96,10 +98,12 @@ export async function fetchHealth(): Promise<HealthResponse> {
 }
 
 /**
- * Baixa um artefato binário (ex.: relatório PDF/CSV) e dispara o download no
- * navegador. Separado de `apiFetch` porque a resposta não é JSON.
+ * Busca um artefato binário autenticado (ex.: relatório PDF/JSON) como Blob.
+ * Reaproveita o mesmo fluxo de auth/refresh do `apiFetch`. Preserva o
+ * `new URL(..., window.location.origin)` — necessário quando VITE_API_BASE_URL
+ * é relativo em produção (ver memória de deploy).
  */
-export async function downloadFile(path: string, filename: string): Promise<void> {
+export async function fetchBlob(path: string): Promise<Blob> {
   const url = new URL(`${API_BASE_URL}${path}`, window.location.origin);
 
   const doRequest = (token: string | null) =>
@@ -114,8 +118,15 @@ export async function downloadFile(path: string, filename: string): Promise<void
   }
 
   if (!resp.ok) throw new ApiError(resp.status, await resp.text());
+  return resp.blob();
+}
 
-  const blob = await resp.blob();
+/**
+ * Baixa um artefato binário (ex.: relatório PDF/CSV) e dispara o download no
+ * navegador. Separado de `apiFetch` porque a resposta não é JSON.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const blob = await fetchBlob(path);
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;

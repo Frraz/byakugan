@@ -2,47 +2,103 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Tokens semânticos (convenção shadcn/ui, valores HSL).
+ * `:root` define o tema claro; `.dark` aplica a identidade Cyber Navy
+ * (docs/ui.md) — o dark é o tema padrão da aplicação.
+ */
 :root {
-  font-family: Inter, system-ui, sans-serif;
+  font-family: "Inter Variable", Inter, system-ui, sans-serif;
+  color-scheme: light;
+
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --surface-2: 210 40% 96%;
+  --primary: 192 91% 36%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 94%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 94%;
+  --muted-foreground: 215 25% 33%;
+  --accent: 262 60% 55%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 74% 47%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 72% 29%;
+  --warning: 33 92% 36%;
+  --sev-high: 22 92% 40%;
+  --sev-info: 215 16% 40%;
+  --border: 214 32% 88%;
+  --input: 214 32% 82%;
+  --ring: 192 91% 36%;
+  --radius: 0.75rem;
+}
+
+.dark {
   color-scheme: dark;
+
+  --background: 220 49% 8%; /* #0B1220 Cyber Navy */
+  --foreground: 214 47% 93%; /* #E6EDF6 */
+  --card: 221 46% 12%; /* #111A2E surface */
+  --card-foreground: 214 47% 93%;
+  --popover: 221 45% 11%; /* #0F1728 surface-2 */
+  --popover-foreground: 214 47% 93%;
+  --surface-2: 221 45% 11%; /* #0F1728 */
+  --primary: 190 100% 50%; /* #00D4FF Electric Blue */
+  --primary-foreground: 220 49% 8%;
+  --secondary: 221 39% 19%; /* #1E2A44 */
+  --secondary-foreground: 214 47% 93%;
+  --muted: 221 39% 16%;
+  --muted-foreground: 218 18% 61%; /* #8A97AD */
+  --accent: 255 100% 86%; /* #C8B6FF Byakugan Lavender */
+  --accent-foreground: 220 49% 8%;
+  --destructive: 0 84% 60%; /* #EF4444 */
+  --destructive-foreground: 0 0% 98%;
+  --success: 142 71% 45%; /* #22C55E */
+  --warning: 38 92% 50%; /* #F59E0B */
+  --sev-high: 25 95% 53%; /* #F97316 */
+  --sev-info: 215 16% 47%; /* #64748B */
+  --border: 221 39% 19%; /* #1E2A44 */
+  --input: 221 39% 19%;
+  --ring: 190 100% 50%;
 }
 
 @layer base {
-  body {
-    @apply bg-navy text-foreground antialiased;
+  * {
+    @apply border-border;
   }
 
-  /* Fundo "command center": glow radial sutil no topo. */
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
   #root {
     min-height: 100vh;
+  }
+
+  /* Fundo "command center": glow radial sutil no topo (só no dark). */
+  .dark #root {
     background-image:
       radial-gradient(circle at 50% -10%, rgba(0, 212, 255, 0.08), transparent 55%),
       radial-gradient(circle at 85% 0%, rgba(200, 182, 255, 0.06), transparent 45%);
-  }
-
-  /* Tema claro (adaptação — dark é o padrão). */
-  :root.light body {
-    @apply bg-slate-100 text-slate-900;
-  }
-  :root.light #root {
-    background-image: none;
   }
 }
 
 @layer components {
   /* Painel glass: superfície translúcida com blur e borda sutil. */
   .glass {
-    @apply rounded-2xl border border-border/70 bg-surface/70 backdrop-blur-md shadow-glass;
-  }
-  :root.light .glass {
-    @apply border-slate-200 bg-white/80;
+    @apply rounded-2xl border border-border bg-card/80 shadow-glass backdrop-blur-md;
   }
 
   .neon-ring {
     @apply ring-1 ring-primary/40 shadow-glow;
   }
 
-  /* Barra de rolagem discreta no tema escuro. */
+  /* Barra de rolagem discreta. */
   .thin-scroll::-webkit-scrollbar {
     width: 8px;
     height: 8px;

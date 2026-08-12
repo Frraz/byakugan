@@ -26,6 +26,7 @@ export interface Target {
   authorization_scope: string;
   authorization_expires_at: string | null;
   is_active: boolean;
+  scans_count: number;
   created_by: string;
   created_at: string;
 }
@@ -38,11 +39,22 @@ export type ScanStatus =
   | "failed"
   | "cancelled";
 
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+
+export interface SeverityCounts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+}
+
 export interface Scan {
   id: string;
   created_by: string;
   target_ref: string | null;
   target: string;
+  target_name: string | null;
   scan_type: ScanType;
   status: ScanStatus;
   authorized_by: string;
@@ -50,10 +62,10 @@ export interface Scan {
   started_at: string | null;
   finished_at: string | null;
   failure_reason: string;
+  findings_count: number;
+  severity_counts: SeverityCounts;
   created_at: string;
 }
-
-export type Severity = "critical" | "high" | "medium" | "low" | "info";
 
 export interface Service {
   id: string;
@@ -103,11 +115,39 @@ export interface Asset {
   technologies?: Technology[];
 }
 
+export interface Vulnerability {
+  id: string;
+  cve: string | null;
+  title: string;
+  severity: Severity;
+  cvss_score: number | string | null;
+  cvss_vector: string | null;
+  description: string;
+  references: string[];
+  created_at: string;
+}
+
+/** Resumo de ativo aninhado num finding (backend AssetSummarySerializer). */
+export interface AssetSummary {
+  id: string;
+  hostname: string | null;
+  ip: string | null;
+  domain: string | null;
+}
+
+/** Resumo de scan aninhado num finding (backend ScanSummarySerializer). */
+export interface ScanSummary {
+  id: string;
+  target: string;
+  scan_type: ScanType;
+  created_at: string;
+}
+
 export interface Finding {
   id: string;
-  scan: string;
-  asset: string;
-  vulnerability: string | null;
+  scan: ScanSummary | null;
+  asset: AssetSummary | null;
+  vulnerability: Vulnerability | null;
   category: string;
   title: string;
   severity: Severity;
@@ -115,18 +155,6 @@ export interface Finding {
   description: string;
   evidence: string;
   recommendation: string;
-  created_at: string;
-}
-
-export interface Vulnerability {
-  id: string;
-  cve: string | null;
-  title: string;
-  severity: Severity;
-  cvss_score: number | null;
-  cvss_vector: string | null;
-  description: string;
-  references: string[];
   created_at: string;
 }
 
@@ -138,14 +166,6 @@ export interface Paginated<T> {
 }
 
 // --- Correlation Engine (risk score, priorização, heatmap) ---
-
-export interface SeverityCounts {
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  info: number;
-}
 
 export interface RiskSummary {
   assets: number;
@@ -186,9 +206,13 @@ export type ReportFormat = "pdf" | "csv" | "json";
 export interface Report {
   id: string;
   scan: string;
+  scan_target: string | null;
+  scan_type: ScanType | null;
+  scan_finished_at: string | null;
   report_type: ReportType;
   format: ReportFormat;
   file_path: string;
+  file_size: number | null;
   created_by: string;
   created_at: string;
 }

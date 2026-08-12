@@ -1,4 +1,4 @@
-/** Hooks React Query para Targets, Scans, Assets e Findings. */
+/** Hooks React Query para Targets, Scans, Assets, Findings, Reports e KB. */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -19,38 +19,77 @@ import type {
   Vulnerability,
 } from "../lib/types";
 
+/** Há algum scan ativo (pending/running) na página atual? Controla o polling. */
+function hasActiveScan(page?: Paginated<Scan>): boolean {
+  return Boolean(page?.results.some((s) => s.status === "pending" || s.status === "running"));
+}
+
 // --- Targets ---
 
-export function useTargets(search?: string) {
+export type TargetFilters = {
+  search?: string;
+  kind?: string;
+  is_active?: string;
+  page?: number;
+}
+
+export function useTargets(params?: TargetFilters) {
   return useQuery({
-    queryKey: ["targets", search],
-    queryFn: () => apiFetch<Paginated<Target>>("/targets/", { params: { search } }),
+    queryKey: ["targets", params],
+    queryFn: () => apiFetch<Paginated<Target>>("/targets/", { params }),
   });
 }
 
-export interface CreateTargetInput {
+export interface TargetInput {
   name: string;
   value: string;
   authorized_by: string;
   authorization_scope: string;
+  authorization_expires_at?: string | null;
+  is_active?: boolean;
 }
 
 export function useCreateTarget() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateTargetInput) =>
+    mutationFn: (input: TargetInput) =>
       apiFetch<Target>("/targets/", { method: "POST", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["targets"] }),
+  });
+}
+
+export function useUpdateTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Partial<TargetInput> }) =>
+      apiFetch<Target>(`/targets/${id}/`, { method: "PATCH", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["targets"] }),
+  });
+}
+
+export function useDeleteTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/targets/${id}/`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["targets"] }),
   });
 }
 
 // --- Scans ---
 
-export function useScans(params?: { status?: string; scan_type?: string }) {
+export type ScanFilters = {
+  status?: string;
+  scan_type?: string;
+  search?: string;
+  page?: number;
+}
+
+export function useScans(params?: ScanFilters) {
   return useQuery({
     queryKey: ["scans", params],
     queryFn: () => apiFetch<Paginated<Scan>>("/scans/", { params }),
-    refetchInterval: 5000, // polling do status
+    // Polling adaptativo: só refetch enquanto houver scan ativo (evita 429).
+    refetchInterval: (query) => (hasActiveScan(query.state.data) ? 4000 : false),
   });
 }
 
@@ -69,6 +108,13 @@ export function useScanFindings(id: string) {
   return useQuery({
     queryKey: ["scan", id, "findings"],
     queryFn: () => apiFetch<Finding[]>(`/scans/${id}/findings/`),
+  });
+}
+
+export function useScanServices(id: string) {
+  return useQuery({
+    queryKey: ["scan", id, "services"],
+    queryFn: () => apiFetch<Service[]>(`/scans/${id}/services/`),
   });
 }
 
@@ -93,16 +139,31 @@ export function useCancelScan() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => apiFetch<Scan>(`/scans/${id}/cancel/`, { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["scans"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["scans"] });
+      qc.invalidateQueries({ queryKey: ["scan", id] });
+    },
+  });
+}
+
+export function useDeleteScan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/scans/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scans"] });
+      qc.invalidateQueries({ queryKey: ["findings"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
   });
 }
 
 // --- Assets ---
 
-export function useAssets(search?: string) {
+export function useAssets(params?: { search?: string; status?: string; page?: number }) {
   return useQuery({
-    queryKey: ["assets", search],
-    queryFn: () => apiFetch<Paginated<Asset>>("/assets/", { params: { search } }),
+    queryKey: ["assets", params],
+    queryFn: () => apiFetch<Paginated<Asset>>("/assets/", { params }),
   });
 }
 
@@ -129,14 +190,23 @@ export function useAssetTechnologies(id: string) {
 
 // --- Vulnerabilities & Findings ---
 
-export function useVulnerabilities(params?: { severity?: string; search?: string }) {
+export function useVulnerabilities(params?: { severity?: string; search?: string; page?: number }) {
   return useQuery({
     queryKey: ["vulnerabilities", params],
     queryFn: () => apiFetch<Paginated<Vulnerability>>("/vulnerabilities/", { params }),
   });
 }
 
-export function useFindings(params?: { severity?: string; asset?: string; scan?: string }) {
+export type FindingFilters = {
+  severity?: string;
+  category?: string;
+  asset?: string;
+  scan?: string;
+  search?: string;
+  page?: number;
+}
+
+export function useFindings(params?: FindingFilters) {
   return useQuery({
     queryKey: ["findings", params],
     queryFn: () => apiFetch<Paginated<Finding>>("/findings/", { params }),
@@ -154,7 +224,12 @@ export function useRiskOverview(limit = 5) {
 
 // --- Reports ---
 
-export function useReports(params?: { scan?: string; report_type?: string; format?: string }) {
+export function useReports(params?: {
+  scan?: string;
+  report_type?: string;
+  format?: string;
+  page?: number;
+}) {
   return useQuery({
     queryKey: ["reports", params],
     queryFn: () => apiFetch<Paginated<Report>>("/reports/", { params }),
@@ -193,7 +268,11 @@ export function useDownloadReport() {
 
 // --- Knowledge Base ---
 
-export function useKnowledgeArticles(params?: { category?: string; search?: string }) {
+export function useKnowledgeArticles(params?: {
+  category?: string;
+  search?: string;
+  page?: number;
+}) {
   return useQuery({
     queryKey: ["knowledge-base", params],
     queryFn: () => apiFetch<Paginated<KnowledgeArticle>>("/knowledge-base/", { params }),

@@ -1,14 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { SeverityBadge, StatusBadge } from "../ui";
+import { SeverityBadge } from "../ui/severity-badge";
+import { StatusBadge } from "../ui/status-badge";
 
 describe("SeverityBadge", () => {
-  it("renders the severity label and aria-label", () => {
+  it("renders the localized severity label and aria-label", () => {
     render(<SeverityBadge severity="critical" />);
-    const badge = screen.getByLabelText("Severidade critical");
+    const badge = screen.getByLabelText("Severidade Crítica");
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent(/critical/i);
+    expect(badge).toHaveTextContent(/crítica/i);
   });
 });
 
