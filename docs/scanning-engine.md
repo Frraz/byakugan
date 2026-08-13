@@ -134,18 +134,26 @@ O motor é dual-stack por design — alvos IPv6 (literais ou hosts IPv6-only) s�
 - **TLS** (`TlsAdapter`) e **DNS** (`dnspython`, usado por `DnsAdapter`/`SubdomainAdapter`/`ZoneTransferAdapter`/`EmailSecurityAdapter`) já eram dual-stack — `socket.create_connection` e dnspython resolvem a família correta sozinhos a partir do endereço.
 - **Banco**: `Asset.ip` é `GenericIPAddressField` sem restrição de protocolo — aceita v4 e v6 nativamente.
 
-### Docker (dev e produção)
+### Docker (dev e produção) — saída IPv6 real ainda não habilitada
 
-A rede bridge padrão do Compose é **IPv4-only** — sem isso, o `celery`/`web` nunca conseguem abrir uma conexão IPv6 de saída, mesmo com o código acima correto. `docker-compose.yml`/`docker-compose.prod.yml` declaram uma rede dual-stack (`enable_ipv6: true` + sub-rede IPv6 ULA). Isso sozinho **não é suficiente** para o container alcançar a internet IPv6 real — também é preciso, no host:
+A rede bridge padrão do Compose é **IPv4-only** — sem uma rede dual-stack, o `celery`/`web` nunca conseguem abrir uma conexão IPv6 de saída, mesmo com o código acima correto. **`docker-compose.yml`/`docker-compose.prod.yml` propositalmente NÃO declaram uma rede custom hoje**: uma primeira tentativa (`enable_ipv6: true` + sub-rede IPv4 fixa) derrubou a produção em 13/08/2026 — o subnet IPv4 escolhido "no chute" colidiu com outra rede já alocada no host (`Pool overlaps with other one on this address space`), que roda vários projetos Docker lado a lado. Revertido para o padrão do Compose (subnet auto-alocado pelo Docker, sem risco de colisão manual).
 
-1. Docker Engine ≥ 27 com `"ip6tables": true` em `/etc/docker/daemon.json` (reinicie o daemon depois de editar) — habilita o NAT66 automático para a rede bridge.
-2. O próprio host ter conectividade IPv6 de saída (nem todo VPS tem — confirme com `curl -6 https://ifconfig.co` **no host**, fora de qualquer container, antes de assumir que vai funcionar dentro dele).
+Para reativar com segurança (fora do hot-path de um deploy — planeje isso separadamente):
 
-Verificação de ponta a ponta (depois de 1 e 2):
+1. No host de destino, **descubra os subnets já em uso** antes de escolher qualquer coisa:
+   ```bash
+   docker network ls
+   docker network inspect $(docker network ls -q) --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+   ```
+2. Escolha um bloco IPv4 (`/16` ou menor) e um prefixo IPv6 ULA que **não apareçam** na lista acima, e declare o bloco `networks:` com `enable_ipv6: true` + esses subnets.
+3. Docker Engine ≥ 27 com `"ip6tables": true` em `/etc/docker/daemon.json` (reinicie o daemon depois de editar) — habilita o NAT66 automático para a rede bridge.
+4. O próprio host ter conectividade IPv6 de saída (nem todo VPS tem — confirme com `curl -6 https://ifconfig.co` **no host**, fora de qualquer container, antes de assumir que vai funcionar dentro dele).
+
+Verificação de ponta a ponta (depois de 1–4):
 ```bash
 docker compose exec celery python -c "import socket; print(socket.getaddrinfo('ipv6.google.com', 443))"
 ```
-Se isso resolver e não levantar `OSError`, o container tem saída IPv6 funcional.
+Se isso resolver e não levantar `OSError`, o container tem saída IPv6 funcional. **Enquanto isso não for feito**, o motor continua correto para IPv6 (todo o código de `adapters.py` é dual-stack), mas na prática só alcança alvos IPv4 quando rodando via Docker — um alvo IPv6 real simplesmente não resolve/conecta a partir do container, falhando do mesmo jeito "silencioso" que qualquer host inalcançável (adapter retorna vazio, sem crashar).
 
 ## Estrutura de Findings
 
