@@ -7,6 +7,24 @@
 #  - container_name prefixado com "byakugan_" para não colidir com outros sistemas.
 #
 # Porta loopback deste projeto: 8012  (confirme livre: ss -tlnp | grep 8012)
+#
+# Rede dual-stack: o `celery` precisa de saída IPv6 real pra varrer alvos
+# IPv6 — a rede bridge padrão do Compose é IPv4-only. Exige, no HOST:
+#  1. Docker Engine >=27 com `"ip6tables": true` em /etc/docker/daemon.json
+#     (reinicie o daemon: sudo systemctl restart docker) — sem isso o
+#     container recebe endereço IPv6 mas não tem NAT pra sair à internet.
+#  2. O próprio servidor ter conectividade IPv6 de saída (nem todo VPS tem —
+#     confirme com `curl -6 https://ifconfig.co` no HOST antes de assumir
+#     que vai funcionar dentro do container).
+# Ver docs/scanning-engine.md e DEPLOY.md.
+
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+        - subnet: fd00:cafe:babe::/48
 
 services:
   db:

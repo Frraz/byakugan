@@ -94,14 +94,20 @@ Detalhe, atualização e exclusão (exclusão apenas `admin`, auditada — RN006
 ## Assets
 
 ### `GET /api/assets/`
-Lista ativos. Filtros: `?status=`, `?search=` (ip/hostname/domain).
+Lista ativos. Filtros: `?status=`, `?search=` (ip/hostname/domain). Cada item inclui `findings_count`.
 ```json
 // 200 (results[])
-{ "id": "...", "ip": "192.168.0.10", "hostname": "web-01", "domain": "empresa.com", "os": "Ubuntu 24.04", "status": "active" }
+{ "id": "...", "ip": "192.168.0.10", "hostname": "web-01", "domain": "empresa.com", "os": "Ubuntu 24.04", "status": "active", "findings_count": 3 }
 ```
 
 ### `GET /api/assets/{id}/`
 Detalhe do ativo, incluindo serviços e findings relacionados.
+
+### `DELETE /api/assets/{id}/`
+Exclui um ativo **em cascata** (RN020): remove os findings associados a ele. Serviços, tecnologias, registros DNS e triagens cascadeiam automaticamente. Restrito a `admin` (RN006); auditado com a contagem removida (`asset.delete`).
+```json
+// 204 No Content
+```
 
 ### `GET /api/assets/{id}/services/`
 Lista serviços do ativo.

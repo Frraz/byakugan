@@ -71,6 +71,12 @@ docker logs byakugan_web --tail 30
 curl -s -H "X-Forwarded-Proto: https" http://127.0.0.1:8012/api/health/
 ```
 
+**Suporte a alvos IPv6**: o compose já declara uma rede dual-stack, mas isso sozinho não basta — o Docker Engine do host precisa de `"ip6tables": true` em `/etc/docker/daemon.json` (reinicie o daemon após editar) e o host precisa de conectividade IPv6 de saída de verdade. Confirme com:
+```bash
+docker compose -f docker-compose.prod.yml exec celery python -c "import socket; print(socket.getaddrinfo('ipv6.google.com', 443))"
+```
+Sem isso, scans contra alvos IPv6 falham silenciosamente (o adapter trata como host inalcançável, não como erro). Ver `docs/scanning-engine.md` → Suporte IPv4/IPv6.
+
 ## 4. Build do frontend (SPA)
 
 O nginx do host serve o SPA a partir de `frontend/dist`. Gerar o build

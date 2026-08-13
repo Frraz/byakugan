@@ -130,6 +130,7 @@ export interface Asset {
   domain: string | null;
   os: string | null;
   status: "active" | "inactive";
+  findings_count: number;
   created_at: string;
   services?: Service[];
   technologies?: Technology[];

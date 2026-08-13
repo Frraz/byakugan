@@ -522,6 +522,48 @@ def test_cve_lookup_skips_services_without_product_or_version():
     assert adapter.run("bare01", CONTEXT) == []
 
 
+def test_cve_lookup_never_treats_tls_protocol_as_a_product(monkeypatch):
+    """Regressão: TLS 1.3 é um protocolo negociado, não um produto identificável.
+
+    ``TlsAdapter`` grava ``Technology(category="tls", name="TLS", version="TLSv1.3")``
+    — antes desta correção, isso virava candidato a lookup de CVE, o CPE falhava
+    (não existe fornecedor "tls") e caía no fallback keywordSearch="TLS TLSv1.3",
+    casando qualquer CVE que apenas MENCIONASSE TLS 1.3 (ex.: CVEs específicas de
+    wolfSSL/Apache/F5/OpenSSL com "TLS 1.3 enabled" como pré-requisito) — um falso
+    positivo grave, já que o scanner nunca identificou a implementação TLS real.
+    """
+    asset = Asset.objects.create(ip="76.76.21.21", hostname="scanme")
+    Technology.objects.create(
+        asset=asset,
+        category="tls",
+        name="TLS",
+        version="TLSv1.3",
+        source="tls",
+        evidence="cipher=TLS_AES_256_GCM_SHA384, bits=256",
+    )
+    queried = []
+    monkeypatch.setattr(
+        CveLookupAdapter,
+        "_query_nvd",
+        lambda self, *, cpe_match=None, keyword=None: queried.append((cpe_match, keyword)) or [],
+    )
+
+    results = CveLookupAdapter(request_delay=0).run("scanme", CONTEXT)
+
+    assert results == []
+    assert queried == []  # NVD nunca é consultada para uma entrada "tls"
+
+
+def test_cve_lookup_collects_only_product_categories():
+    asset = _asset_with_profile()
+    Technology.objects.create(
+        asset=asset, category="tls", name="TLS", version="TLSv1.3", source="tls", evidence="e"
+    )
+    products = CveLookupAdapter._collect_products(asset)
+    names = {p[0] for p in products}
+    assert names == {"nginx", "Django"}  # da fixture — "TLS" nunca aparece
+
+
 def test_cve_lookup_queries_by_cpe_first(monkeypatch):
     """CPE é tentado antes de keyword — evidência registra qual busca deu match."""
     _asset_with_profile()
@@ -1142,3 +1184,208 @@ def test_web_scan_caps_injection_points(monkeypatch):
     WebScanAdapter().run("testsite.local", context)
 
     assert len(injected_params) <= adapters_mod.MAX_INJECTION_POINTS
+
+
+# --- Dual-stack (IPv4/IPv6) --------------------------------------------------
+# _resolve_ip/_address_family/_url_host são a base de todo probe de rede do
+# motor: sem eles, um alvo IPv6 (literal ou host IPv6-only) nunca é varrido
+# corretamente — socket.gethostbyname() é IPv4-only, socket.AF_INET travado
+# rejeita conectar num IP v6, e uma URL tipo "http://2001:db8::1:8080/" é
+# ambígua (RFC 3986 exige colchetes). Verificado empiricamente contra sockets
+# reais em loopback (TCP e UDP, IPv4 e IPv6) antes destes testes.
+
+
+def test_resolve_ip_passes_through_ip_literals_unchanged():
+    assert adapters_mod._resolve_ip("192.168.0.10") == "192.168.0.10"
+    assert adapters_mod._resolve_ip("2001:db8::1") == "2001:db8::1"
+    assert adapters_mod._resolve_ip("::1") == "::1"
+
+
+def test_resolve_ip_prefers_ipv4_when_host_has_both(monkeypatch):
+    def fake_getaddrinfo(host, port):
+        return [
+            (10, 1, 6, "", ("2001:db8::1", 0, 0, 0)),
+            (2, 1, 6, "", ("203.0.113.5", 0)),
+        ]
+
+    monkeypatch.setattr("socket.getaddrinfo", fake_getaddrinfo)
+    assert adapters_mod._resolve_ip("dual-stack.example.test") == "203.0.113.5"
+
+
+def test_resolve_ip_falls_back_to_ipv6_when_thats_the_only_option(monkeypatch):
+    def fake_getaddrinfo(host, port):
+        return [(10, 1, 6, "", ("2001:db8::1", 0, 0, 0))]
+
+    monkeypatch.setattr("socket.getaddrinfo", fake_getaddrinfo)
+    assert adapters_mod._resolve_ip("v6only.example.test") == "2001:db8::1"
+
+
+def test_resolve_ip_returns_none_when_unresolvable(monkeypatch):
+    def fake_getaddrinfo(host, port):
+        raise OSError("nodename nor servname provided")
+
+    monkeypatch.setattr("socket.getaddrinfo", fake_getaddrinfo)
+    assert adapters_mod._resolve_ip("nope.invalid") is None
+
+
+def test_address_family_ipv4():
+    import socket
+
+    assert adapters_mod._address_family("192.168.0.10") == socket.AF_INET
+
+
+def test_address_family_ipv6():
+    import socket
+
+    assert adapters_mod._address_family("2001:db8::1") == socket.AF_INET6
+    assert adapters_mod._address_family("::1") == socket.AF_INET6
+
+
+def test_url_host_leaves_ipv4_and_hostnames_unchanged():
+    assert adapters_mod._url_host("192.168.0.10") == "192.168.0.10"
+    assert adapters_mod._url_host("example.com") == "example.com"
+
+
+def test_url_host_brackets_ipv6_literals():
+    assert adapters_mod._url_host("2001:db8::1") == "[2001:db8::1]"
+    assert adapters_mod._url_host("::1") == "[::1]"
+
+
+def _fake_socket_capturing_family(captured: dict):
+    """Fábrica de um stub de ``socket.socket`` que só registra a família pedida."""
+
+    class FakeSocket:
+        def __init__(self, family, type_):
+            captured["family"] = family
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def settimeout(self, timeout):
+            pass
+
+        def connect_ex(self, addr):
+            return 1  # porta "fechada" — só a família importa pro teste
+
+        def sendto(self, payload, addr):
+            pass
+
+        def recv(self, size):
+            raise OSError("no data")
+
+    return FakeSocket
+
+
+def test_port_discovery_probe_uses_af_inet6_for_ipv6_ip(monkeypatch):
+    import socket
+
+    captured: dict = {}
+    monkeypatch.setattr("socket.socket", _fake_socket_capturing_family(captured))
+
+    PortDiscoveryAdapter()._probe("2001:db8::1", 80)
+
+    assert captured["family"] == socket.AF_INET6
+
+
+def test_port_discovery_probe_uses_af_inet_for_ipv4_ip(monkeypatch):
+    import socket
+
+    captured: dict = {}
+    monkeypatch.setattr("socket.socket", _fake_socket_capturing_family(captured))
+
+    PortDiscoveryAdapter()._probe("192.168.0.10", 80)
+
+    assert captured["family"] == socket.AF_INET
+
+
+def test_udp_probe_uses_af_inet6_for_ipv6_ip(monkeypatch):
+    import socket
+
+    captured: dict = {}
+    monkeypatch.setattr("socket.socket", _fake_socket_capturing_family(captured))
+
+    UdpProbeAdapter()._probe_udp("2001:db8::1", 53, b"x")
+
+    assert captured["family"] == socket.AF_INET6
+
+
+def test_http_fingerprint_brackets_ipv6_target_in_url(monkeypatch):
+    captured_urls = []
+
+    def fake_fetch(self, url):
+        captured_urls.append(url)
+        return None
+
+    monkeypatch.setattr(HttpFingerprintAdapter, "_fetch", fake_fetch)
+
+    HttpFingerprintAdapter(ports={80: "http"}).run("2001:db8::1", CONTEXT)
+
+    assert captured_urls == ["http://[2001:db8::1]:80/"]
+
+
+def test_web_scan_brackets_ipv6_target_in_base_url(monkeypatch):
+    captured_urls = []
+
+    def fake_fetch(self, url, **kwargs):
+        captured_urls.append(url)
+        return None
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x", authorized_by="CISO", authorization_scope="2001:db8::1", options={}
+    )
+
+    WebScanAdapter().run("2001:db8::1", context)
+
+    assert captured_urls  # ao menos uma porta tentada
+    assert all(
+        url.startswith(("http://[2001:db8::1]:", "https://[2001:db8::1]:")) for url in captured_urls
+    )
+
+
+class _FakeCredsResponse:
+    status_code = 404
+    text = ""
+    headers: dict = {}
+
+
+def test_default_creds_elasticsearch_check_brackets_ipv6_host(monkeypatch):
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        return _FakeCredsResponse()
+
+    monkeypatch.setattr("requests.get", fake_get)
+    DefaultCredsAdapter()._check_elasticsearch_open("2001:db8::1", 9200)
+
+    assert captured["url"] == "http://[2001:db8::1]:9200/"
+
+
+def test_default_creds_http_basic_check_brackets_ipv6_host(monkeypatch):
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        return _FakeCredsResponse()
+
+    monkeypatch.setattr("requests.get", fake_get)
+    DefaultCredsAdapter()._check_http_basic_default("2001:db8::1", 8080)
+
+    assert captured["url"] == "http://[2001:db8::1]:8080/"
+
+
+def test_default_creds_actuator_check_brackets_ipv6_host(monkeypatch):
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        return _FakeCredsResponse()
+
+    monkeypatch.setattr("requests.get", fake_get)
+    DefaultCredsAdapter()._check_actuator_exposed("2001:db8::1", 8080)
+
+    assert captured["url"] == "http://[2001:db8::1]:8080/actuator/health"

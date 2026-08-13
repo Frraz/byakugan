@@ -2,9 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Boxes, Search } from "lucide-react";
+import { Boxes, Search, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
+import { AssetDeleteDialog } from "@/components/assets/AssetDeleteDialog";
 import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 import { DataPagination } from "@/components/ui/data-pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
@@ -14,12 +17,16 @@ import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { useAssets } from "@/hooks/useData";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePermissions } from "@/hooks/usePermissions";
 import { errorMessage } from "@/lib/errors";
+import type { Asset } from "@/lib/types";
 
 export function AssetsPage() {
   usePageTitle("Assets");
+  const { isAdmin } = usePermissions();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [deleting, setDeleting] = useState<Asset | null>(null);
   const debounced = useDebounce(search);
 
   const params = useMemo(() => ({ search: debounced || undefined, page }), [debounced, page]);
@@ -67,6 +74,7 @@ export function AssetsPage() {
                   <TableHead>Domínio</TableHead>
                   <TableHead>SO</TableHead>
                   <TableHead>Status</TableHead>
+                  {isAdmin && <TableHead className="text-right">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -92,6 +100,19 @@ export function AssetsPage() {
                         {a.status === "active" ? "Ativo" : "Inativo"}
                       </span>
                     </TableCell>
+                    {isAdmin && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Excluir ativo"
+                          className="hover:text-destructive"
+                          onClick={() => setDeleting(a)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -100,6 +121,15 @@ export function AssetsPage() {
           <DataPagination count={data?.count ?? 0} page={page} onPageChange={setPage} />
         </div>
       )}
+
+      <AssetDeleteDialog
+        asset={deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        onDeleted={() => {
+          toast.success("Ativo excluído.");
+          setDeleting(null);
+        }}
+      />
     </div>
   );
 }

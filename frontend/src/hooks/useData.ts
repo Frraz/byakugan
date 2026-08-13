@@ -192,6 +192,18 @@ export function useAssetTechnologies(id: string) {
   });
 }
 
+export function useDeleteAsset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/assets/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      qc.invalidateQueries({ queryKey: ["findings"] });
+      qc.invalidateQueries({ queryKey: ["risk-overview"] });
+    },
+  });
+}
+
 // --- Vulnerabilities & Findings ---
 
 export function useVulnerabilities(params?: { severity?: string; search?: string; page?: number }) {

@@ -56,10 +56,19 @@ class DnsRecordSerializer(serializers.ModelSerializer):
 class AssetSerializer(serializers.ModelSerializer):
     """Ativo do inventário (visão de lista)."""
 
+    findings_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Asset
-        fields = ("id", "ip", "hostname", "domain", "os", "status", "created_at")
+        fields = ("id", "ip", "hostname", "domain", "os", "status", "findings_count", "created_at")
         read_only_fields = fields
+
+    def get_findings_count(self, obj: Asset) -> int:
+        """Total de findings do ativo — annotation da view ou fallback com uma query."""
+        annotated = getattr(obj, "findings_total", None)
+        if annotated is not None:
+            return annotated
+        return obj.findings.count()
 
 
 class AssetDetailSerializer(AssetSerializer):

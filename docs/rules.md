@@ -23,6 +23,7 @@
 | RN017 | A expansão de um alvo em múltiplos hosts (CIDR, lista) é limitada por `max_hosts` (padrão 256, teto absoluto 1024) e **cada host expandido é revalidado individualmente contra o `authorization_scope`** antes de qualquer probe — nenhum host fora do escopo é tocado, mesmo que pertença ao CIDR original autorizado apenas em parte. |
 | RN018 | Achados (`Finding`) são identificados por um `dedup_key` (hash de ativo + categoria + título normalizado) que reconhece o "mesmo" achado lógico entre execuções de scan distintas, sem violar a imutabilidade da RN003. Um analista pode **triar** esse achado lógico (`open`/`fixed`/`false-positive`/`accepted-risk`, via `FindingTriage`) — achados triados como `fixed`/`false-positive`/`accepted-risk` são excluídos da soma do `risk_score` e do heatmap, evitando que reexecuções do mesmo scan inflem o risco artificialmente. |
 | RN019 | RN008 é validada no próprio modelo (`Finding.clean()`/`save()` chama `full_clean()`), não apenas por convenção do parser — nenhum finding sem `description`/`evidence`/`recommendation` chega a ser persistido, independente do caminho de código que o criou. |
+| RN020 | Excluir um ativo (apenas `admin`) remove **em cascata** seus findings (`Finding.asset` é `PROTECT` no schema — removidos explicitamente antes); serviços, tecnologias, registros DNS e triagens associados cascadeiam automaticamente (`CASCADE`). A exclusão é auditada com as contagens do que foi removido. |
 
 ## Papéis (RBAC)
 

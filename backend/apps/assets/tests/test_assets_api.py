@@ -6,6 +6,9 @@ import pytest
 from django.urls import reverse
 
 from apps.assets.models import Asset, DnsRecord, Service, Technology
+from apps.core.models import AuditLog
+from apps.scans.models import Finding, Scan
+from apps.scans.tests.factories import ScanFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -92,3 +95,95 @@ def test_asset_without_dns_records_returns_empty_list(viewer_client, asset_with_
     resp = viewer_client.get(reverse("assets:asset-dns-records", args=[asset_with_service.id]))
     assert resp.status_code == 200
     assert resp.data == []
+
+
+def test_asset_list_includes_findings_count(viewer_client, asset_with_service):
+    scan = ScanFactory()
+    Finding.objects.create(
+        scan=scan,
+        asset=asset_with_service,
+        category="software",
+        title="x",
+        severity="low",
+        description="d",
+        evidence="e",
+        recommendation="r",
+    )
+    resp = viewer_client.get(reverse("assets:asset-list"))
+    assert resp.data["results"][0]["findings_count"] == 1
+
+
+def test_asset_list_findings_count_defaults_to_zero(viewer_client, asset_with_service):
+    resp = viewer_client.get(reverse("assets:asset-list"))
+    assert resp.data["results"][0]["findings_count"] == 0
+
+
+# --- Exclusão (RN006/RN020) ---
+
+
+def test_delete_asset_requires_auth(api_client, asset_with_service):
+    resp = api_client.delete(reverse("assets:asset-detail", args=[asset_with_service.id]))
+    assert resp.status_code == 401
+
+
+def test_viewer_cannot_delete_asset(viewer_client, asset_with_service):
+    resp = viewer_client.delete(reverse("assets:asset-detail", args=[asset_with_service.id]))
+    assert resp.status_code == 403
+    assert Asset.objects.filter(id=asset_with_service.id).exists()
+
+
+def test_analyst_cannot_delete_asset(analyst_client, asset_with_service):
+    resp = analyst_client.delete(reverse("assets:asset-detail", args=[asset_with_service.id]))
+    assert resp.status_code == 403
+    assert Asset.objects.filter(id=asset_with_service.id).exists()
+
+
+def test_admin_can_delete_asset(admin_client, asset_with_service):
+    resp = admin_client.delete(reverse("assets:asset-detail", args=[asset_with_service.id]))
+    assert resp.status_code == 204
+    assert not Asset.objects.filter(id=asset_with_service.id).exists()
+
+
+def test_delete_asset_cascades_findings_services_technologies(admin_client, asset_with_service):
+    scan = ScanFactory()
+    Finding.objects.create(
+        scan=scan,
+        asset=asset_with_service,
+        category="software",
+        title="x",
+        severity="low",
+        description="d",
+        evidence="e",
+        recommendation="r",
+    )
+    asset_id = asset_with_service.id
+
+    resp = admin_client.delete(reverse("assets:asset-detail", args=[asset_id]))
+
+    assert resp.status_code == 204
+    assert not Finding.objects.filter(asset_id=asset_id).exists()
+    assert not Service.objects.filter(asset_id=asset_id).exists()
+    assert not Technology.objects.filter(asset_id=asset_id).exists()
+    # o scan em si é preservado — só o finding (e seu vínculo com o ativo) é removido
+    assert Scan.objects.filter(id=scan.id).exists()
+
+
+def test_delete_asset_records_audit_with_findings_count(admin_client, asset_with_service):
+    scan = ScanFactory()
+    Finding.objects.create(
+        scan=scan,
+        asset=asset_with_service,
+        category="software",
+        title="x",
+        severity="low",
+        description="d",
+        evidence="e",
+        recommendation="r",
+    )
+    asset_id = str(asset_with_service.id)
+
+    admin_client.delete(reverse("assets:asset-detail", args=[asset_id]))
+
+    log = AuditLog.objects.get(action="asset.delete")
+    assert log.metadata["asset_id"] == asset_id
+    assert log.metadata["findings_deleted"] == 1

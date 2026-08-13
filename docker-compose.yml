@@ -1,3 +1,17 @@
+# Rede dual-stack: os adapters do motor de scan (celery/backend) precisam de
+# saída IPv6 real pra varrer alvos IPv6 — a rede bridge padrão do Compose é
+# IPv4-only. Exige Docker Engine com suporte a NAT66 (>=27); confirme com
+# `docker compose exec celery python -c "import socket;
+# print(socket.getaddrinfo('ipv6.google.com', 443))"` antes de confiar nisso
+# em produção. Ver docs/scanning-engine.md.
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+        - subnet: fd00:dead:beef::/48
+
 services:
   postgres:
     image: postgres:16-alpine

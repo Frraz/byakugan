@@ -119,7 +119,33 @@ class ScannerAdapter(ABC):
 >
 > **Vulnerability Assessment (CVE)**: o `CveLookupAdapter` **não varre a rede** — lê o technology profile já persistido do ativo (`Service.product`/`version` e `Technology.name`/`version`) e consulta a API NVD CVE 2.0. Tenta primeiro `virtualMatchString` no formato CPE 2.3 (`cve.py:build_cpe_match` — `cpe:2.3:a:*:<produto>:<versão>:*`, vendor coringa por não haver dicionário produto→vendor mantido), que casa contra o dicionário oficial de produtos da NVD e reduz falso-positivo; se não encontrar nada, cai para `keywordSearch="<produto> <versão>"` (busca livre). A métrica CVSS mais recente disponível é escolhida (v3.1 > v3.0 > v2 — `cve.py:_best_metric`) e a severidade é derivada do `baseSeverity` da NVD ou, na ausência dele, dos limiares padrão de CVSS (RN004). Respeita rate limit via `NVD_REQUEST_DELAY_SECONDS` (padrão 6s sem `NVD_API_KEY`) e nunca deriva técnicas de exploração — apenas correlação informativa de versão × CVE.
 >
+> **Protocolo não é produto (correção de falso positivo)**: só entram como candidato a lookup de CVE as tecnologias de categorias que identificam um produto de software real (`PRODUCT_TECHNOLOGY_CATEGORIES` em `adapters.py`: `os`/`web-server`/`framework`/`language`/`frontend`/`cms`/`database`). A categoria `tls` fica **de fora de propósito** — é o protocolo negociado (`Technology(category="tls", name="TLS", version="TLSv1.3")`), não uma implementação identificável. Antes desta exclusão, essa entrada virava candidata: o CPE match falhava (não existe fornecedor "tls" no dicionário da NVD) e caía no fallback `keywordSearch="TLS TLSv1.3"`, uma busca livre que casa qualquer CVE cujo texto apenas **mencione** TLS 1.3 como pré-requisito — ex.: CVEs específicas de wolfSSL 4.0.0, Apache 2.4.37/38+mod_ssl, F5 BIG-IP ou OpenSSL 3.0.0–3.0.2 com configuração de cipher específica, nenhuma delas confirmável só por saber que o alvo negocia TLS 1.3. `CveLookupAdapter._collect_products` filtra por essa allowlist antes de qualquer chamada à NVD — os achados de protocolo/certificado do próprio `TlsAdapter` (`tls_analysis.py`, category `tls`/`certificate`) continuam existindo normalmente, só não alimentam mais o lookup de CVE por produto.
+>
 > **Pipeline em duas fases**: como o `CveLookupAdapter`/`DefaultCredsAdapter`/`WebScanAdapter` dependem de dados que os adapters de discovery/fingerprint descobrem, `tasks.run_scan` executa e **persiste** primeiro os adapters de profile (por host) e só então roda os de vulnerabilidade — mesmo dentro de um único scan `full`.
+
+## Suporte IPv4/IPv6
+
+O motor é dual-stack por design — alvos IPv6 (literais ou hosts IPv6-only) são varridos como qualquer alvo IPv4:
+
+- **Validação e escopo** (`validators.py`/`authorization.py`/`targets.py`) já usam o módulo `ipaddress` da stdlib de forma agnóstica a versão — `ip_address`/`ip_network` reconhecem v4 e v6 automaticamente, inclusive na expansão de CIDR (`expand_target`, RN017) e no matching de escopo (RN007).
+- **Resolução de host** (`adapters._resolve_ip`): usa `socket.getaddrinfo` (não `socket.gethostbyname`, que é IPv4-only e nunca enxergava registros `AAAA`). IPs literais passam direto, sem round-trip de DNS; quando um host resolve para as duas famílias, IPv4 é preferido (compatibilidade com o inventário existente); IPv6 é usado quando é a única opção.
+- **Probes de socket puro** (`PortDiscoveryAdapter`/`UdpProbeAdapter`): a família do socket (`AF_INET`/`AF_INET6`) é escolhida dinamicamente a partir da versão do IP resolvido (`adapters._address_family`) — antes era travada em `AF_INET`, rejeitando qualquer conexão a um IP v6.
+- **URLs HTTP** (`HttpFingerprintAdapter`, `WebScanAdapter`, `DefaultCredsAdapter`): um IPv6 literal usado como alvo precisa de colchetes em URL (RFC 3986: `http://[2001:db8::1]:8080/`, nunca `http://2001:db8::1:8080/`, ambíguo). `adapters._url_host` cuida disso antes de qualquer `f"http://{host}:{port}"`.
+- **TLS** (`TlsAdapter`) e **DNS** (`dnspython`, usado por `DnsAdapter`/`SubdomainAdapter`/`ZoneTransferAdapter`/`EmailSecurityAdapter`) já eram dual-stack — `socket.create_connection` e dnspython resolvem a família correta sozinhos a partir do endereço.
+- **Banco**: `Asset.ip` é `GenericIPAddressField` sem restrição de protocolo — aceita v4 e v6 nativamente.
+
+### Docker (dev e produção)
+
+A rede bridge padrão do Compose é **IPv4-only** — sem isso, o `celery`/`web` nunca conseguem abrir uma conexão IPv6 de saída, mesmo com o código acima correto. `docker-compose.yml`/`docker-compose.prod.yml` declaram uma rede dual-stack (`enable_ipv6: true` + sub-rede IPv6 ULA). Isso sozinho **não é suficiente** para o container alcançar a internet IPv6 real — também é preciso, no host:
+
+1. Docker Engine ≥ 27 com `"ip6tables": true` em `/etc/docker/daemon.json` (reinicie o daemon depois de editar) — habilita o NAT66 automático para a rede bridge.
+2. O próprio host ter conectividade IPv6 de saída (nem todo VPS tem — confirme com `curl -6 https://ifconfig.co` **no host**, fora de qualquer container, antes de assumir que vai funcionar dentro dele).
+
+Verificação de ponta a ponta (depois de 1 e 2):
+```bash
+docker compose exec celery python -c "import socket; print(socket.getaddrinfo('ipv6.google.com', 443))"
+```
+Se isso resolver e não levantar `OSError`, o container tem saída IPv6 funcional.
 
 ## Estrutura de Findings
 

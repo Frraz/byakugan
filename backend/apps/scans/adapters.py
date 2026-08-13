@@ -10,6 +10,7 @@ Política de Autorização de Alvos — nenhuma varredura fora do escopo autoriz
 
 from __future__ import annotations
 
+import ipaddress
 import secrets
 import time
 from abc import ABC, abstractmethod
@@ -135,13 +136,50 @@ _BANNER_NUDGES: dict[int, bytes] = {6379: b"PING\r\n"}
 
 
 def _resolve_ip(host: str) -> str | None:
-    """Resolve um host/domínio para um IP (retorna None se não resolver)."""
+    """Resolve um host/domínio para um IP — IPv4 ou IPv6 (None se não resolver).
+
+    IPs literais (v4 ou v6) passam direto, sem round-trip de DNS. Quando o
+    host resolve para as duas famílias, prefere IPv4 (mantém compatibilidade
+    com o inventário/testes existentes); usa IPv6 quando é a única família
+    disponível (host IPv6-only). ``socket.gethostbyname`` (usado antes) é
+    IPv4-only e nunca enxergava registros AAAA nem aceitava um IPv6 literal.
+    """
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+
     import socket
 
     try:
-        return socket.gethostbyname(host)
+        infos = socket.getaddrinfo(host, None)
     except OSError:
         return None
+    addrs = [info[4][0] for info in infos]
+    ipv4 = next((addr for addr in addrs if ":" not in addr), None)
+    return ipv4 or (addrs[0] if addrs else None)
+
+
+def _address_family(ip: str) -> int:
+    """Família de socket (``AF_INET``/``AF_INET6``) para um IP literal."""
+    import socket
+
+    return socket.AF_INET6 if ipaddress.ip_address(ip).version == 6 else socket.AF_INET
+
+
+def _url_host(host: str) -> str:
+    """Formata um host para uso em URL — IPv6 literal precisa de colchetes (RFC 3986).
+
+    ``http://2001:db8::1:8080/`` é ambíguo (não dá pra saber onde o endereço
+    termina e a porta começa); hostnames e IPv4 não precisam de tratamento.
+    """
+    try:
+        if ipaddress.ip_address(host).version == 6:
+            return f"[{host}]"
+    except ValueError:
+        pass
+    return host
 
 
 class PortDiscoveryAdapter(ScannerAdapter):
@@ -179,7 +217,7 @@ class PortDiscoveryAdapter(ScannerAdapter):
         """TCP connect + leitura curta do banner. Retorna ``(porta_aberta, banner)``."""
         import socket
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        with socket.socket(_address_family(ip), socket.SOCK_STREAM) as sock:
             sock.settimeout(CONNECT_TIMEOUT)
             if sock.connect_ex((ip, port)) != 0:
                 return False, b""
@@ -268,7 +306,7 @@ class UdpProbeAdapter(ScannerAdapter):
         """Envia o payload e aguarda qualquer resposta. True se algo respondeu."""
         import socket
 
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        with socket.socket(_address_family(ip), socket.SOCK_DGRAM) as sock:
             sock.settimeout(self.UDP_TIMEOUT)
             try:
                 sock.sendto(payload, (ip, port))
@@ -387,7 +425,7 @@ class SubdomainAdapter(ScannerAdapter):
     CRTSH_MAX_CANDIDATES = 500
 
     def _resolve(self, hostname: str) -> str | None:
-        """Resolve um hostname para IPv4. ``None`` se não resolver."""
+        """Resolve um hostname para IP (v4 ou v6). ``None`` se não resolver."""
         return _resolve_ip(hostname)
 
     def _fetch_crtsh(self, domain: str) -> list[dict[str, Any]]:
@@ -723,7 +761,7 @@ class HttpFingerprintAdapter(ScannerAdapter):
         seen: set[tuple[str, str]] = set()
 
         for port, scheme in self.ports.items():
-            fetched = self._fetch(f"{scheme}://{target}:{port}/")
+            fetched = self._fetch(f"{scheme}://{_url_host(target)}:{port}/")
             if fetched is None:
                 continue
             headers, body = fetched
@@ -930,6 +968,21 @@ class TlsAdapter(ScannerAdapter):
 NVD_MAX_RESULTS = 5
 NVD_TIMEOUT = 10.0
 
+#: Categorias de ``Technology`` que identificam um PRODUTO de software real
+#: (nome+versão correlacionáveis a CVE). ``tls`` fica de fora de propósito:
+#: é o protocolo negociado (``TlsAdapter`` grava ``Technology(category="tls",
+#: name="TLS", version="TLSv1.3")``), não um produto — tratá-lo como tal faz
+#: o CPE match falhar (não existe fornecedor "tls") e cair no fallback
+#: ``keywordSearch="TLS TLSv1.3"``, que casa qualquer CVE cujo texto apenas
+#: MENCIONE TLS 1.3 como pré-requisito (ex.: CVEs específicas de wolfSSL,
+#: Apache mod_ssl, F5 BIG-IP ou OpenSSL que citam "TLS 1.3 enabled" nas
+#: condições) — um falso positivo grave, já que o scanner nunca identificou
+#: a implementação real. ``other`` também fica de fora por não garantir que
+#: ``name``/``version`` sejam um produto identificável.
+PRODUCT_TECHNOLOGY_CATEGORIES = frozenset(
+    {"os", "web-server", "framework", "language", "frontend", "cms", "database"}
+)
+
 
 class CveLookupAdapter(ScannerAdapter):
     """Correlaciona produtos/versões já identificados com CVEs conhecidos (NVD).
@@ -1003,7 +1056,12 @@ class CveLookupAdapter(ScannerAdapter):
 
     @staticmethod
     def _collect_products(asset: Any) -> list[tuple[str, str, str, int | None]]:
-        """Reúne pares (produto, versão) únicos do ativo — serviços e tecnologias."""
+        """Reúne pares (produto, versão) únicos do ativo — serviços e tecnologias.
+
+        Tecnologias fora de ``PRODUCT_TECHNOLOGY_CATEGORIES`` (ex.: ``tls``, o
+        protocolo negociado, não um produto) são ignoradas — nunca viram
+        candidato a lookup de CVE.
+        """
         products: list[tuple[str, str, str, int | None]] = []
         seen: set[tuple[str, str]] = set()
 
@@ -1016,6 +1074,8 @@ class CveLookupAdapter(ScannerAdapter):
                 products.append((service.product, service.version, "service", service.port))
 
         for tech in asset.technologies.all():
+            if tech.category not in PRODUCT_TECHNOLOGY_CATEGORIES:
+                continue
             if not tech.name or not tech.version:
                 continue
             key = (tech.name.lower(), tech.version)
@@ -1151,7 +1211,7 @@ class DefaultCredsAdapter(ScannerAdapter):
 
         try:
             response = requests.get(
-                f"http://{host}:{port}/",
+                f"http://{_url_host(host)}:{port}/",
                 timeout=DEFAULT_CREDS_TIMEOUT,
                 headers={"User-Agent": "Byakugan-Scanner/0.1 (authorized assessment)"},
             )
@@ -1167,7 +1227,7 @@ class DefaultCredsAdapter(ScannerAdapter):
 
         from .data.default_creds import HTTP_BASIC_CREDS
 
-        url = f"http://{host}:{port}/"
+        url = f"http://{_url_host(host)}:{port}/"
         try:
             probe = requests.get(url, timeout=DEFAULT_CREDS_TIMEOUT)
         except RequestException:
@@ -1199,7 +1259,8 @@ class DefaultCredsAdapter(ScannerAdapter):
 
         try:
             response = requests.get(
-                f"http://{host}:{port}{ACTUATOR_HEALTH_PATH}", timeout=DEFAULT_CREDS_TIMEOUT
+                f"http://{_url_host(host)}:{port}{ACTUATOR_HEALTH_PATH}",
+                timeout=DEFAULT_CREDS_TIMEOUT,
             )
         except RequestException:
             return False, ""
@@ -1584,7 +1645,7 @@ class WebScanAdapter(ScannerAdapter):
         results: list[RawResult] = []
         for port, scheme in WEB_SCAN_PORTS.items():
             context.check_cancelled()
-            base_url = f"{scheme}://{target}:{port}/"
+            base_url = f"{scheme}://{_url_host(target)}:{port}/"
             probed = self._fetch(base_url)
             if probed is None or probed[0] >= 500:
                 continue
