@@ -129,6 +129,23 @@ def _detect_cmdi(response: ProbeResponse, payload: str) -> str | None:
     return None
 
 
+# --- SSRF --------------------------------------------------------------------
+# Aponta o parâmetro para o endpoint de metadata da nuvem (read-only). Se a
+# resposta trouxer marcadores de metadata, o servidor buscou a URL controlada
+# pelo usuário — SSRF confirmado, sem tocar em nada do alvo.
+SSRF_PAYLOAD = "http://169.254.169.254/latest/meta-data/"
+_SSRF_RE = re.compile(
+    r"(ami-id|instance-id|iam/security-credentials|computeMetadata|placement/|meta-data/)",
+    re.IGNORECASE,
+)
+
+
+def _detect_ssrf(response: ProbeResponse, payload: str) -> str | None:
+    if _SSRF_RE.search(response.body):
+        return "Metadata de nuvem/interno refletido na resposta — o servidor buscou a URL injetada (SSRF)."
+    return None
+
+
 @dataclass(frozen=True)
 class InjectionCheck:
     """Uma verificação de injeção de requisição única: payload → detector."""
@@ -140,6 +157,11 @@ class InjectionCheck:
     description: str
     recommendation: str
     detect: Callable[[ProbeResponse, str], str | None]
+    #: Classe de vulnerabilidade (``Finding.playbook_key``) — liga o finding ao
+    #: playbook curado (aba Evidências) e ao módulo de exploração. Vários checks
+    #: podem mapear para o mesmo playbook (ex.: ssti-dollar/ssti-mustache →
+    #: ``injection.ssti``).
+    playbook_key: str = ""
 
     def run(self, response: ProbeResponse) -> str | None:
         return self.detect(response, self.payload)
@@ -152,6 +174,7 @@ class InjectionCheck:
             "description": self.description,
             "evidence": f"URL: {url} | Parâmetro: '{param}' | {evidence}",
             "recommendation": self.recommendation,
+            "playbook_key": self.playbook_key,
         }
 
 
@@ -170,6 +193,7 @@ def build_checks(token: str) -> list[InjectionCheck]:
             ),
             recommendation="Codificar (HTML-encode) toda entrada do usuário antes de refleti-la no HTML.",
             detect=_detect_xss,
+            playbook_key="injection.xss",
         ),
         InjectionCheck(
             key="sqli-error",
@@ -183,6 +207,7 @@ def build_checks(token: str) -> list[InjectionCheck]:
             ),
             recommendation="Usar consultas parametrizadas (prepared statements) em vez de concatenar entrada do usuário.",
             detect=_detect_sqli_error,
+            playbook_key="injection.sqli-error",
         ),
         InjectionCheck(
             key="path-traversal",
@@ -198,6 +223,7 @@ def build_checks(token: str) -> list[InjectionCheck]:
                 "montar caminhos a partir de entrada do usuário sem sanitização."
             ),
             detect=_detect_traversal,
+            playbook_key="injection.path-traversal",
         ),
         InjectionCheck(
             key="open-redirect",
@@ -212,6 +238,7 @@ def build_checks(token: str) -> list[InjectionCheck]:
             ),
             recommendation="Validar destinos de redirecionamento contra uma allowlist de URLs/domínios internos.",
             detect=_detect_redirect,
+            playbook_key="injection.open-redirect",
         ),
         InjectionCheck(
             key="ssti-dollar",
@@ -225,6 +252,7 @@ def build_checks(token: str) -> list[InjectionCheck]:
             ),
             recommendation="Nunca renderizar entrada do usuário como template; usar apenas como dado/variável.",
             detect=_detect_ssti,
+            playbook_key="injection.ssti",
         ),
         InjectionCheck(
             key="ssti-mustache",
@@ -238,6 +266,7 @@ def build_checks(token: str) -> list[InjectionCheck]:
             ),
             recommendation="Nunca renderizar entrada do usuário como template; usar apenas como dado/variável.",
             detect=_detect_ssti,
+            playbook_key="injection.ssti",
         ),
         InjectionCheck(
             key="command-injection",
@@ -251,6 +280,26 @@ def build_checks(token: str) -> list[InjectionCheck]:
             ),
             recommendation="Nunca montar comandos de shell a partir de entrada do usuário; usar APIs específicas sem shell.",
             detect=_detect_cmdi,
+            playbook_key="injection.command-injection",
+        ),
+        InjectionCheck(
+            key="ssrf",
+            title="Possível Server-Side Request Forgery (SSRF)",
+            severity="high",
+            payload=SSRF_PAYLOAD,
+            description=(
+                "Ao injetar uma URL de recurso interno (endpoint de metadata da nuvem) "
+                "no parâmetro, a resposta trouxe conteúdo interno — o servidor buscou a "
+                "URL controlada pelo usuário, permitindo alcançar serviços internos "
+                "inacessíveis de fora."
+            ),
+            recommendation=(
+                "Validar destinos de requisição do servidor contra uma allowlist; "
+                "bloquear IPs internos/link-local (169.254.0.0/16, 127.0.0.0/8) e "
+                "seguir redirects com cuidado."
+            ),
+            detect=_detect_ssrf,
+            playbook_key="injection.ssrf",
         ),
     ]
 

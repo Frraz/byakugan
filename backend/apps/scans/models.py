@@ -173,6 +173,12 @@ class Finding(BaseModel):
     #: único aqui de propósito: cada reexecução cria um novo Finding (RN003),
     #: todos compartilhando o mesmo dedup_key.
     dedup_key = models.CharField(max_length=64, db_index=True, blank=True, default="")
+    #: Chave estável da classe de vulnerabilidade (ex.: ``injection.sqli-error``,
+    #: ``exposure.git``, ``credential.default``) — Fase 7+. Liga o finding ao
+    #: ``ExploitationPlaybook`` curado (aba Evidências) e ao ``ExploitModule``
+    #: correspondente (motor de exploração). Vazio em linhas antigas
+    #: (retrocompatível) e em findings sem playbook/exploit mapeado.
+    playbook_key = models.CharField(max_length=64, db_index=True, blank=True, default="")
 
     def __str__(self) -> str:
         return f"{self.title} ({self.severity})"
@@ -241,3 +247,117 @@ class FindingTriage(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.dedup_key[:12]}... [{self.status}]"
+
+
+class ImpactLevel(models.TextChoices):
+    """Nível de impacto **comprovado** por uma exploração (aba Evidências).
+
+    Diferente de ``Severity`` (gravidade teórica do finding), descreve o que a
+    exploração de fato demonstrou alcançar — ex.: um XSS refletido tem
+    severity ``high`` mas o impacto comprovado pode ser só ``session`` se o
+    Byakugan não conseguiu encadear além disso.
+    """
+
+    RCE = "rce", "Execução remota de código"
+    DB_READ = "db-read", "Leitura de banco de dados"
+    FILE_READ = "file-read", "Leitura de arquivos do servidor"
+    AUTH_BYPASS = "auth-bypass", "Bypass de autenticação"
+    SSRF = "ssrf", "Acesso a rede/recursos internos"
+    INFO_DISCLOSURE = "info-disclosure", "Vazamento de informação"
+    SESSION = "session", "Roubo/manipulação de sessão"
+    NONE = "none", "Sem impacto comprovado"
+
+
+class ExploitationPlaybook(BaseModel):
+    """Guia curado de exploração por classe de vulnerabilidade (aba Evidências).
+
+    Conteúdo de referência **vivo** (como ``knowledge.KnowledgeArticle``, e ao
+    contrário do histórico imutável de ``Finding``/``Evidence`` — RN003 não se
+    aplica aqui): descreve como um pentester exploraria manualmente a falha,
+    **até onde dá para ir** (cadeia de escalação) e como fazer. A UI interpola
+    o playbook com o contexto real do finding (URL, parâmetro, ativo).
+
+    Casado a findings por ``key`` == ``Finding.playbook_key`` (ex.:
+    ``injection.sqli-error``). É o lado "manual/educacional" da aba; o lado
+    "automatizado" (o que o Byakugan realmente executou) é ``Evidence``.
+    """
+
+    #: Classe de vulnerabilidade — casa com ``Finding.playbook_key``.
+    key = models.SlugField(max_length=64, unique=True)
+    title = models.CharField(max_length=255)
+    category = models.CharField(max_length=50, choices=FindingCategory.choices)
+    #: Rótulo curto da classe (ex.: "SQL Injection", "Path Traversal").
+    vuln_class = models.CharField(max_length=100)
+    summary = models.TextField()
+    #: Pré-condições para a exploração ser viável (ex.: "parâmetro refletido").
+    prerequisites = models.TextField(blank=True, default="")
+    #: Passos manuais de prova de conceito: lista de
+    #: ``{"action", "command", "expected"}`` (command é template com
+    #: placeholders ``{url}``/``{param}``/``{host}`` interpolados na UI).
+    steps = models.JSONField(default=list)
+    #: "Até onde dá para ir": estágios de escalação, cada um
+    #: ``{"stage", "impact", "description"}`` — do menor ao maior impacto.
+    escalation_path = models.JSONField(default=list)
+    #: Maior impacto atingível pela classe (``ImpactLevel``).
+    max_impact = models.CharField(
+        max_length=20, choices=ImpactLevel.choices, default=ImpactLevel.INFO_DISCLOSURE
+    )
+    #: Ferramentas típicas (ex.: ``["sqlmap", "Burp Suite", "curl"]``).
+    tools = models.JSONField(default=list, blank=True)
+    references = models.JSONField(default=list, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.key})"
+
+
+class Evidence(BaseModel):
+    """Resultado **imutável** de uma tentativa de exploração automatizada (RN003).
+
+    Registra o que o motor de exploração (``apps/scans/exploit/``) de fato
+    executou contra um ``Finding`` já detectado — sob Regras de Engajamento de
+    não-dano (nunca destrói/DoS/persiste/exfiltra em massa; ver
+    ``docs/exploitation-engine.md``). Cada tentativa gera um novo registro,
+    amarrado ao scan, nunca sobrescrito — é histórico de auditoria.
+
+    Combinado com o ``ExploitationPlaybook`` de mesmo ``playbook_key``, alimenta
+    a aba Evidências: o playbook mostra "até onde dá para ir" manualmente; a
+    ``Evidence`` mostra "até onde o Byakugan foi" automaticamente.
+    """
+
+    class Status(models.TextChoices):
+        PROVEN = "proven", "Comprovado"
+        ATTEMPTED = "attempted", "Tentado (sem prova)"
+        FAILED = "failed", "Falhou"
+        BLOCKED = "blocked", "Bloqueado (gating/RoE)"
+        NOT_ATTEMPTED = "not-attempted", "Não tentado"
+
+    finding = models.ForeignKey(Finding, on_delete=models.PROTECT, related_name="evidences")
+    scan = models.ForeignKey(Scan, on_delete=models.PROTECT, related_name="evidences")
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name="evidences")
+    playbook_key = models.CharField(max_length=64, db_index=True, blank=True, default="")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ATTEMPTED)
+    #: Impacto comprovado (``ImpactLevel``) — só significativo quando ``proven``.
+    impact_level = models.CharField(
+        max_length=20, choices=ImpactLevel.choices, default=ImpactLevel.NONE
+    )
+    #: Artefato benigno/limitado extraído como prova (versão do banco, saída de
+    #: ``id``, amostra ≤3 linhas, usuários enumerados) — nunca dados sensíveis
+    #: em massa (RoE).
+    proof = models.TextField(blank=True, default="")
+    #: Passos que o motor realmente executou: lista de
+    #: ``{"action", "request", "response_excerpt", "result"}`` — é o "até onde foi".
+    steps_performed = models.JSONField(default=list)
+    #: Findings adjacentes encadeados nesta exploração (ex.: SSRF → metadata).
+    chain = models.JSONField(default=list, blank=True)
+    #: Perfil de RoE usado (ex.: ``extended``).
+    roe_profile = models.CharField(max_length=20, blank=True, default="")
+
+    def __str__(self) -> str:
+        return f"Evidence[{self.status}] {self.playbook_key} ({self.impact_level})"
+
+    def save(self, *args, **kwargs):
+        # Imutável após criado (RN003) — como AuditLog. Reexecuções criam novos
+        # registros; nunca reescrevem o histórico de exploração.
+        if self._state.adding is False:
+            raise ValueError("Evidence é imutável e não pode ser atualizada (RN003).")
+        super().save(*args, **kwargs)

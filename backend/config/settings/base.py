@@ -146,6 +146,13 @@ SIMPLE_JWT = {
 # --- Motor de varredura (kill-switch — ver docs/security.md) ---
 BYAKUGAN_SCANNING_ENABLED = env.bool("BYAKUGAN_SCANNING_ENABLED", default=False)
 
+# --- Motor de exploração (kill-switch dedicado — ver docs/exploitation-engine.md) ---
+# Segundo kill-switch, INDEPENDENTE do de varredura: a exploração ativa
+# (prova de impacto) é a operação mais invasiva do Byakugan e exige opt-in
+# explícito. Mesmo com este switch ligado, a exploração só roda com
+# ``options["exploit"]=True`` + ``intensity="aggressive"`` + escopo revalidado.
+BYAKUGAN_EXPLOITATION_ENABLED = env.bool("BYAKUGAN_EXPLOITATION_ENABLED", default=False)
+
 # --- Vulnerability Assessment (NVD — Fase 3) ---
 # API key é opcional: sem ela, o NVD limita a ~5 requisições/30s por IP; com
 # ela, o limite sobe para ~50/30s. NVD_REQUEST_DELAY_SECONDS espaça as

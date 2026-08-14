@@ -595,6 +595,7 @@ class ZoneTransferAdapter(ScannerAdapter):
                             "Restringir AXFR (allow-transfer) apenas aos IPs dos "
                             "servidores DNS secundários autorizados."
                         ),
+                        "playbook_key": "dns.zone-transfer",
                     },
                 )
             )
@@ -1285,6 +1286,7 @@ class DefaultCredsAdapter(ScannerAdapter):
                     "Definir uma senha forte/única, desabilitar acesso anônimo e "
                     "restringir o acesso à rede autorizada."
                 ),
+                "playbook_key": "credential.default",
             },
         )
 
@@ -1597,6 +1599,7 @@ class WebScanAdapter(ScannerAdapter):
                         ),
                         "evidence": f"URL: {url} | Parâmetro: '{param}' | {evidence}",
                         "recommendation": "Usar consultas parametrizadas (prepared statements).",
+                        "playbook_key": "injection.sqli-boolean",
                     }
                     results.append(self._make_finding(finding, target=target, ip=ip))
 
@@ -1629,6 +1632,7 @@ class WebScanAdapter(ScannerAdapter):
                                 "Usar consultas parametrizadas e nunca montar comandos "
                                 "de shell a partir de entrada do usuário."
                             ),
+                            "playbook_key": "injection.sqli-error",
                         }
                         results.append(self._make_finding(finding, target=target, ip=ip))
 

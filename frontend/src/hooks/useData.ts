@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, downloadFile } from "../lib/api";
 import type {
   Asset,
+  Evidence,
+  ExploitationPlaybook,
   Finding,
   FindingTriage,
   KnowledgeArticle,
@@ -248,6 +250,57 @@ export function useTriageFinding() {
       qc.invalidateQueries({ queryKey: ["findings"] });
       qc.invalidateQueries({ queryKey: ["scan"] });
       qc.invalidateQueries({ queryKey: ["risk-overview"] });
+    },
+  });
+}
+
+// --- Motor de exploração & Evidências ---
+
+export type EvidenceFilters = {
+  status?: string;
+  impact_level?: string;
+  scan?: string;
+  asset?: string;
+  finding?: string;
+  playbook_key?: string;
+  search?: string;
+  page?: number;
+};
+
+export function useEvidence(params?: EvidenceFilters) {
+  return useQuery({
+    queryKey: ["evidence", params],
+    queryFn: () => apiFetch<Paginated<Evidence>>("/evidence/", { params }),
+  });
+}
+
+export function usePlaybooks(params?: { category?: string; search?: string; page?: number }) {
+  return useQuery({
+    queryKey: ["playbooks", params],
+    queryFn: () => apiFetch<Paginated<ExploitationPlaybook>>("/playbooks/", { params }),
+  });
+}
+
+/** Um playbook por chave (ex.: `injection.sqli-error`); `null` desativa a query. */
+export function usePlaybook(key: string | null | undefined) {
+  return useQuery({
+    queryKey: ["playbook", key],
+    queryFn: () => apiFetch<ExploitationPlaybook>(`/playbooks/${key}/`),
+    enabled: Boolean(key),
+  });
+}
+
+/** Dispara a fase de exploração (prova de impacto) sobre um scan concluído. */
+export function useTriggerExploit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) =>
+      apiFetch<{ detail: string; task_id: string | null }>(`/scans/${scanId}/exploit/`, {
+        method: "POST",
+      }),
+    onSuccess: (_data, scanId) => {
+      qc.invalidateQueries({ queryKey: ["evidence"] });
+      qc.invalidateQueries({ queryKey: ["scan", scanId] });
     },
   });
 }

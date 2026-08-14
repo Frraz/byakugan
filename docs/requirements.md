@@ -30,6 +30,9 @@
 | RF024 | Testes ativos em aplicação web | Crawling same-origin e detecção não-destrutiva de headers de segurança ausentes, cookies inseguros, CORS mal configurado, exposição de arquivos sensíveis, métodos HTTP perigosos (TRACE) e injeção (XSS/SQLi/traversal/SSTI/cmdi/open redirect) | Motor Ofensivo |
 | RF025 | Correlação CVE por CPE | Buscar CVEs na NVD por `virtualMatchString` (CPE 2.3), com fallback para busca por palavra-chave | Motor Ofensivo |
 | RF026 | Triagem de achados | Classificar um achado lógico como aberto/corrigido/falso-positivo/risco aceito, excluindo-o do risk score enquanto resolvido | Motor Ofensivo |
+| RF027 | Exploração para prova de impacto | Executar o exploit sobre findings detectados para comprovar impacto real (ex.: extrair versão/tabelas do banco via SQLi, `id` via command injection, ler arquivos via LFI, alcançar metadata interna via SSRF), sob RoE de não-dano (RN021) | Motor de Exploração |
+| RF028 | Aba Evidências | Exibir, por vulnerabilidade, a prova de exploração automatizada (`Evidence`: passos executados + artefato extraído) e o guia curado de exploração (`ExploitationPlaybook`: PoC manual + cadeia de escalação "até onde dá para ir" + ferramentas + referências) | Motor de Exploração |
+| RF029 | Gatilho e gating de exploração | Disparar a exploração inline (opt-in por scan) ou manualmente sobre um scan concluído, atrás do kill-switch dedicado e da revalidação de escopo por finding (RN022), com cada evento auditado | Motor de Exploração |
 
 ## Requisitos Não Funcionais (RNF)
 

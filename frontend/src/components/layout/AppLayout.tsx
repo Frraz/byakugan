@@ -4,6 +4,7 @@ import { useState, type ComponentType, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Boxes,
+  Crosshair,
   FileBarChart,
   LayoutDashboard,
   LogOut,
@@ -43,6 +44,7 @@ const NAV: NavEntry[] = [
   { to: "/scans", label: "Scans", icon: Radar },
   { to: "/assets", label: "Assets", icon: Boxes },
   { to: "/vulnerabilities", label: "Vulnerabilidades", icon: ShieldAlert },
+  { to: "/evidence", label: "Evidências", icon: Crosshair },
   { to: "/reports", label: "Relatórios", icon: FileBarChart },
   { to: "/knowledge", label: "Knowledge Base", icon: BookOpen },
 ];

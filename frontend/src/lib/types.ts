@@ -210,8 +210,101 @@ export interface Finding {
   evidence: string;
   recommendation: string;
   dedup_key: string;
+  /** Classe de vulnerabilidade que liga o finding ao playbook/evidência. */
+  playbook_key: string;
   triage_status: TriageStatus;
   created_at: string;
+}
+
+// --- Motor de exploração & Evidências (Fase 7+) ---
+
+export type EvidenceStatus =
+  | "proven"
+  | "attempted"
+  | "failed"
+  | "blocked"
+  | "not-attempted";
+
+export type ImpactLevel =
+  | "rce"
+  | "db-read"
+  | "file-read"
+  | "auth-bypass"
+  | "ssrf"
+  | "info-disclosure"
+  | "session"
+  | "none";
+
+/** Um passo que o motor de exploração de fato executou (o "até onde foi"). */
+export interface EvidenceStep {
+  action: string;
+  request?: string;
+  response_excerpt?: string;
+  result?: string;
+}
+
+/** Finding adjacente encadeado numa exploração. */
+export interface EvidenceChainLink {
+  finding: string;
+  impact: string;
+  description: string;
+}
+
+/** Resumo de finding aninhado numa evidência. */
+export interface FindingRef {
+  id: string;
+  title: string;
+  severity: Severity;
+  category: FindingCategory;
+  playbook_key: string;
+}
+
+/** Resultado imutável de uma exploração automatizada (aba Evidências). */
+export interface Evidence {
+  id: string;
+  finding: FindingRef | null;
+  scan: string;
+  asset: AssetSummary | null;
+  playbook_key: string;
+  status: EvidenceStatus;
+  impact_level: ImpactLevel;
+  proof: string;
+  steps_performed: EvidenceStep[];
+  chain: EvidenceChainLink[];
+  roe_profile: string;
+  created_at: string;
+}
+
+/** Passo manual de PoC de um playbook curado. */
+export interface PlaybookStep {
+  action: string;
+  command?: string;
+  expected?: string;
+}
+
+/** Estágio de escalação ("até onde dá para ir") de um playbook. */
+export interface EscalationStage {
+  stage: string;
+  impact: ImpactLevel | string;
+  description: string;
+}
+
+/** Guia curado de exploração por classe de vulnerabilidade (aba Evidências). */
+export interface ExploitationPlaybook {
+  id: string;
+  key: string;
+  title: string;
+  category: FindingCategory;
+  vuln_class: string;
+  summary: string;
+  prerequisites: string;
+  steps: PlaybookStep[];
+  escalation_path: EscalationStage[];
+  max_impact: ImpactLevel;
+  tools: string[];
+  references: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Paginated<T> {

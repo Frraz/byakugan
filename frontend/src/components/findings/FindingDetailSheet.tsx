@@ -23,12 +23,69 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { useKnowledgeArticles, useTriageFinding } from "@/hooks/useData";
+import { EvidencePlaybookCard } from "@/components/evidence/EvidencePlaybookCard";
+import { ExploitationTimeline } from "@/components/evidence/ExploitationTimeline";
+import { EvidenceStatusBadge, ImpactBadge } from "@/components/evidence/ImpactBadge";
+import {
+  useEvidence,
+  useKnowledgeArticles,
+  usePlaybook,
+  useTriageFinding,
+} from "@/hooks/useData";
 import { usePermissions } from "@/hooks/usePermissions";
 import { errorMessage } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Finding, TriageStatus } from "@/lib/types";
+
+/** Extrai (url, param) da evidência textual do finding para interpolar o playbook. */
+function parseWebTarget(evidence: string): { url?: string; param?: string } {
+  const match = /URL:\s*(\S+)\s*\|\s*Par[aâ]metro:\s*'([^']*)'/.exec(evidence || "");
+  return match ? { url: match[1], param: match[2] } : {};
+}
+
+/** Seção de exploração: guia curado (playbook) + prova automatizada (Evidence). */
+function ExploitationSection({ finding }: { finding: Finding }) {
+  const { data: playbook } = usePlaybook(finding.playbook_key || null);
+  const { data: evidencePage } = useEvidence(
+    finding.playbook_key ? { finding: finding.id } : undefined,
+  );
+  const evidence = evidencePage?.results?.[0];
+  const host =
+    finding.asset?.hostname || finding.asset?.ip || finding.asset?.domain || undefined;
+  const target = parseWebTarget(finding.evidence);
+
+  if (!finding.playbook_key || (!playbook && !evidence)) return null;
+
+  return (
+    <Section title="Exploração (Evidências)">
+      {evidence && (
+        <div className="space-y-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <EvidenceStatusBadge status={evidence.status} />
+            {evidence.impact_level !== "none" && <ImpactBadge impact={evidence.impact_level} />}
+          </div>
+          {evidence.proof && (
+            <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-popover p-2 font-mono text-xs text-foreground/90">
+              {evidence.proof}
+            </pre>
+          )}
+          {evidence.steps_performed.length > 0 && (
+            <div className="pt-1">
+              <p className="mb-1 text-xs font-semibold text-muted-foreground">
+                O que o Byakugan executou:
+              </p>
+              <ExploitationTimeline steps={evidence.steps_performed} />
+            </div>
+          )}
+        </div>
+      )}
+      {playbook && (
+        <EvidencePlaybookCard playbook={playbook} context={{ ...target, host }} />
+      )}
+    </Section>
+  );
+}
 
 const TRIAGE_LABELS: Record<TriageStatus, string> = {
   open: "Aberto",
@@ -181,6 +238,8 @@ export function FindingDetailSheet({
                 {finding.recommendation}
               </p>
             </Section>
+
+            <ExploitationSection finding={finding} />
 
             {vuln && (
               <Section title="Vulnerabilidade (catálogo)">

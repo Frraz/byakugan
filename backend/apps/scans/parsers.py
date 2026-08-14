@@ -260,6 +260,7 @@ def persist_findings(scan: Scan, raw_results: list[RawResult]) -> FindingsSummar
             dedup_key=compute_dedup_key(
                 asset_id=str(asset.id), category=category, title=data["title"]
             ),
+            playbook_key=data.get("playbook_key", ""),
         )
         summary.findings += 1
 

@@ -20,13 +20,15 @@ Antes de enfileirar, o serviço `create_scan` valida o formato do alvo (RN001) e
 ### Kill-switch global (protótipo)
 O Byakugan é um protótipo de uso restrito. A execução real de varredura é controlada pela env **`BYAKUGAN_SCANNING_ENABLED`** (default **desligado**). Com o switch desligado, o scan é registrado mas **não executa varredura real** — falha de forma controlada com motivo auditado (`scan.blocked`). Isso evita varredura acidental fora de um laboratório autorizado.
 
-### Testes ativos: detecção, nunca exploração (RN016)
-Todo check ativo (credenciais default, injeção, testes web) segue os mesmos princípios:
-- **Apenas detecta e prova** a vulnerabilidade — nunca explora, altera, apaga ou indisponibiliza dados/serviços do alvo.
+### Testes ativos de detecção: não-destrutivos (RN016)
+A **fase de detecção** (credenciais default, injeção, testes web) segue os mesmos princípios não-destrutivos:
+- **Apenas detecta e prova** a existência da vulnerabilidade — não altera, apaga ou indisponibiliza dados/serviços do alvo.
 - Requisições **idempotentes**: GET/OPTIONS/TRACE; nunca PUT/DELETE ou escrita ativa.
 - **Marcadores inertes e únicos** em vez de payloads vivos (ex.: XSS usa `<b>`, nunca `<script>` — pensado inclusive para o caso de XSS armazenado, onde um payload executável salvo poderia atingir usuários reais depois).
 - Testes **time-based** (SQLi/command injection por `sleep`) fazem **uma única requisição curta e limitada**, e só rodam com `intensity="aggressive"`.
 - Credenciais default são testadas **uma vez por serviço**, só em `intensity="aggressive"`, com revalidação de escopo extra antes de qualquer tentativa.
+
+> **Exploração (prova de impacto)**: uma **fase separada e opcional** vai além da detecção — *executa* o exploit sobre os findings já detectados para comprovar impacto real, sob **Regras de Engajamento de não-dano** (nunca destrói/DoS/persiste/exfiltra em massa), atrás de um kill-switch dedicado e opt-in. Ver **`docs/exploitation-engine.md`**.
 
 ## Arquitetura
 

@@ -38,6 +38,21 @@ class ScanningDisabled(APIException):
     default_code = "scanning_disabled"
 
 
+class ExploitationDisabled(APIException):
+    """Exploração ativa desabilitada pelo kill-switch dedicado.
+
+    Ver ``BYAKUGAN_EXPLOITATION_ENABLED`` em docs/exploitation-engine.md — é um
+    kill-switch INDEPENDENTE do de varredura, por ser a operação mais invasiva.
+    """
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = (
+        "Exploração ativa está desabilitada neste ambiente "
+        "(BYAKUGAN_EXPLOITATION_ENABLED=False)."
+    )
+    default_code = "exploitation_disabled"
+
+
 def audited_exception_handler(exc: Exception, context: dict) -> Response | None:
     """Handler de exceções do DRF.
 

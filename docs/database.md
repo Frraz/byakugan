@@ -166,6 +166,7 @@ Ocorrência concreta de uma vulnerabilidade/exposição num ativo, detectada por
 | evidence | text | obrigatório |
 | recommendation | text | obrigatório |
 | dedup_key | string(64) | hash de `asset + category + título normalizado` — identifica o achado lógico entre execuções (não único: várias linhas compartilham o mesmo valor) |
+| playbook_key | string(64) | classe de vulnerabilidade (ex.: `injection.sqli-error`) — liga o finding ao `ExploitationPlaybook` curado e ao módulo de exploração; vazio quando não há playbook/exploit mapeado |
 | created_at / updated_at | datetime | |
 
 > Diferente de `assets`/`services`/`technologies` (inventário corrente, deduplicado), cada `finding` é **imutável e amarrado ao scan que o gerou** (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os anteriores. `dedup_key` reconhece o "mesmo" achado entre essas reexecuções sem violar essa imutabilidade — ver `finding_triages`.
@@ -184,6 +185,47 @@ Estado de triagem **mutável** de um achado lógico (por `dedup_key`).
 | created_at / updated_at | datetime | |
 
 > Camada separada de `findings` justamente para nunca violar RN003: triar um achado (`POST /api/findings/{id}/triage/`) faz `update_or_create` por `dedup_key` — idempotente, nunca duplica. `fixed`/`false-positive`/`accepted-risk` excluem o achado da soma do `risk_score` (Correlation Engine).
+
+### evidences
+Resultado **imutável** (RN023) de uma tentativa de exploração automatizada sobre um finding (aba Evidências).
+
+| Campo | Tipo | Notas |
+| --- | --- | --- |
+| id | UUID (PK) | |
+| finding | FK → findings | `PROTECT` |
+| scan | FK → scans | `PROTECT` — rastreabilidade |
+| asset | FK → assets | `PROTECT` |
+| playbook_key | string(64) | classe de vulnerabilidade explorada |
+| status | enum | `proven` \| `attempted` \| `failed` \| `blocked` \| `not-attempted` |
+| impact_level | enum | `rce`\|`db-read`\|`file-read`\|`auth-bypass`\|`ssrf`\|`info-disclosure`\|`session`\|`none` — impacto **comprovado** |
+| proof | text | artefato benigno/limitado extraído (versão do banco, saída de `id`, amostra ≤3 linhas) |
+| steps_performed | jsonb | passos que o motor executou (`action`/`request`/`response_excerpt`/`result`) — o "até onde foi" |
+| chain | jsonb | findings adjacentes encadeados (ex.: SSRF → metadata) |
+| roe_profile | string | perfil de RoE usado (ex.: `extended`) |
+| created_at / updated_at | datetime | |
+
+> Imutável como `AuditLog`/`Finding` (`save()` bloqueia updates) — cada tentativa gera um novo registro. Criada apenas pelo runner de exploração (`apps/scans/exploit/runner.py`), nunca pela API. Ver `docs/exploitation-engine.md`.
+
+### exploitation_playbooks
+Guia curado de exploração por classe de vulnerabilidade (conteúdo **vivo/editável**, RN023 — como `knowledge_articles`).
+
+| Campo | Tipo | Notas |
+| --- | --- | --- |
+| id | UUID (PK) | |
+| key | slug(64) | **único** — casa com `Finding.playbook_key` (ex.: `injection.sqli-error`) |
+| title | string | |
+| category | enum | mesma taxonomia de `findings.category` |
+| vuln_class | string | rótulo curto (ex.: "SQL Injection") |
+| summary | text | |
+| prerequisites | text | |
+| steps | jsonb | passos de PoC manual (`action`/`command`/`expected`) — `command` interpolado na UI com `{url}`/`{param}`/`{host}` |
+| escalation_path | jsonb | estágios de escalação (`stage`/`impact`/`description`) — "até onde dá para ir" |
+| max_impact | enum | maior impacto atingível (ver `impact_level`) |
+| tools | jsonb | lista (ex.: `["sqlmap", "Burp Suite"]`) |
+| references | jsonb | OWASP/CWE/exploit-db |
+| created_at / updated_at | datetime | |
+
+> Seedado por migração de dados (`scans/migrations/0006_seed_playbooks.py`, mesmo padrão da Knowledge Base). CRUD por `admin`/`analyst`; leitura para qualquer autenticado. Lookup por `key` (com ponto) em `GET /api/playbooks/{key}/`.
 
 ### reports
 Relatório gerado a partir de um scan.

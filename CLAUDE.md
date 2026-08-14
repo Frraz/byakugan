@@ -10,7 +10,7 @@
 
 O objetivo é **descomplicar** o trabalho de equipes de pentest, Red Team, SOC, Blue Team, DevSecOps e analistas de segurança, reunindo em uma única interface a **cobertura máxima possível** de descoberta e detecção de vulnerabilidades — o que hoje exige dezenas de ferramentas separadas (nmap, Burp/ZAP, OpenVAS/Nessus, sqlmap, etc.) — sem depender de binários externos (motor 100% pure-Python).
 
-> **Posicionamento**: o Byakugan **é** uma ferramenta ofensiva — executa testes ativos de vulnerabilidade (credenciais default, injeção, exposição de arquivos, etc.) — mas **nunca explora**: todo teste é **detecção não-destrutiva** (prova a vulnerabilidade sem alterar, apagar ou indisponibilizar dados/serviços do alvo) e só roda contra alvos com **autorização explícita, documentada e não-expirada**. Esse enquadramento — ofensivo, porém seguro e legal por design — é o que torna a ferramenta defensável perante a banca da FIAP e utilizável em um pentest real. Ver `docs/scanning-engine.md` para os guardrails técnicos.
+> **Posicionamento**: o Byakugan **é** uma ferramenta ofensiva — executa testes ativos de vulnerabilidade (credenciais default, injeção, exposição de arquivos, etc.) **e explora as falhas detectadas para comprovar impacto real** (motor de exploração — ver `docs/exploitation-engine.md`). A exploração é **detecção-para-prova sob Regras de Engajamento (RoE) de não-dano**: o Byakugan vai até comprovar o impacto e mostrar *até onde a falha chega* (ex.: extrair versão/amostra do banco via SQLi, rodar `id` via command injection, alcançar metadata interna via SSRF), **mas nunca destrói ou altera dados, nunca causa DoS, nunca cria persistência/backdoor e nunca exfiltra dados em massa**. Só roda contra alvos com **autorização explícita, documentada e não-expirada**, com opt-in por scan, atrás de um kill-switch dedicado, e tudo auditado. Esse enquadramento — ofensivo e capaz de provar impacto, porém seguro e legal por design (é como um pentest real opera sob contrato) — é o que torna a ferramenta defensável perante a banca da FIAP e utilizável em um pentest real. Ver `docs/scanning-engine.md` (detecção) e `docs/exploitation-engine.md` (exploração + RoE) para os guardrails técnicos.
 
 Projeto acadêmico do curso de **Segurança Cibernética da FIAP**.
 
@@ -25,10 +25,11 @@ O Byakugan varre serviços e sistemas reais, incluindo testes ativos. **Só pode
 
 - Todo scan deve registrar quem autorizou e o escopo permitido (ver `docs/scanning-engine.md` → Política de Autorização de Alvos).
 - **Kill-switch global** (`BYAKUGAN_SCANNING_ENABLED`, default `False`): sem ele ativo, nenhuma varredura real executa — o scan falha de forma controlada e auditada.
-- **Escopo fail-closed**: todo alvo — inclusive hosts expandidos de um CIDR ou lista — é revalidado contra o `authorization_scope` antes de qualquer probe. Nada fora do escopo é tocado, mesmo que faça parte do alvo original.
+- **Kill-switch de exploração** (`BYAKUGAN_EXPLOITATION_ENABLED`, default `False`): kill-switch **dedicado e independente** do de varredura. A exploração ativa (prova de impacto) é a operação mais invasiva e só roda com este switch ligado **+** opt-in por scan (`options.exploit=True` + `intensity=aggressive`) ou gatilho manual, **+** escopo revalidado por finding. Ver `docs/exploitation-engine.md`.
+- **Escopo fail-closed**: todo alvo — inclusive hosts expandidos de um CIDR ou lista — é revalidado contra o `authorization_scope` antes de qualquer probe **e antes de cada tentativa de exploração**. Nada fora do escopo é tocado, mesmo que faça parte do alvo original.
 - **Expiração de autorização enforçada** (`authorization_expires_at`): reavaliada a cada tentativa de scan, não só no cadastro do alvo.
-- **Testes ativos são sempre detecção, nunca exploração**: não-destrutivos, idempotentes (GET/OPTIONS/TRACE — nunca escrita ativa), com marcadores inertes em vez de payloads vivos, e testes time-based limitados a uma única requisição curta em intensidade `aggressive`.
-- **Auditoria** de todo evento sensível (criação/cancelamento de scan, triagem de achados, exportação, exclusão).
+- **Detecção é não-destrutiva; exploração é detecção-para-prova sob RoE de não-dano**: a detecção usa requisições idempotentes (GET/OPTIONS/TRACE) e marcadores inertes. A exploração **executa o exploit para comprovar impacto real**, mas sob um piso inegociável, aplicado centralmente no seam de rede do motor (`apps/scans/exploit/base.py`): nunca destrói/altera dados, nunca causa DoS, nunca cria persistência, nunca exfiltra em massa (amostra limitada), nunca emite payload destrutivo (denylist de tokens), com orçamento de requisições por finding. `Evidence` (o que foi provado) é imutável (RN003).
+- **Auditoria** de todo evento sensível (criação/cancelamento de scan, triagem de achados, exportação, exclusão, **e cada evento de exploração** — `exploit.attempted`/`proven`/`blocked`/`failed`).
 - Nenhuma funcionalidade deve facilitar uso não autorizado, evasão de detecção para fins maliciosos, DoS, ou ataque a terceiros.
 - Varredura sem autorização é crime. Isto vale para o desenvolvimento, testes e demonstrações.
 
@@ -183,7 +184,8 @@ Nenhuma feature é considerada "pronta" sem esses cinco itens.
 | `docs/testing.md` | Estratégia de testes |
 | `docs/roadmap.md` | Planejamento por fases até a 1.0 |
 | `docs/security.md` | Arquitetura de segurança do próprio Byakugan |
-| `docs/scanning-engine.md` | Motor de análise e scanner adapters |
+| `docs/scanning-engine.md` | Motor de análise e scanner adapters (detecção) |
+| `docs/exploitation-engine.md` | Motor de exploração (prova de impacto + RoE) e aba Evidências |
 | `docs/ai-assistant.md` | Analista virtual de IA |
 | `docs/modules.md` | Especificação de cada módulo |
 | `docs/domain-model.md` | Entidades, agregados e bounded contexts (DDD) |

@@ -8,6 +8,7 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import asdict
 
+from django.conf import settings
 from django.db.models import Count, OuterRef, Q, Subquery
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -17,11 +18,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.audit import client_ip, record_audit
+from apps.core.exceptions import ExploitationDisabled
 from apps.core.permissions import IsAnalystOrAdmin, ReadOnlyOrAnalyst
 
 from .correlation import compute_asset_risk, compute_heatmap, compute_risk
-from .models import Finding, FindingTriage, Scan, Severity, Target, Vulnerability
+from .models import (
+    Evidence,
+    ExploitationPlaybook,
+    Finding,
+    FindingTriage,
+    Scan,
+    Severity,
+    Target,
+    Vulnerability,
+)
 from .serializers import (
+    EvidenceSerializer,
+    ExploitationPlaybookSerializer,
     FindingSerializer,
     FindingTriageInputSerializer,
     FindingTriageSerializer,
@@ -39,7 +52,7 @@ from .services import (
     delete_scan,
     triage_finding,
 )
-from .tasks import run_scan
+from .tasks import exploit_scan, run_scan
 from .validators import InvalidTarget
 
 DEFAULT_TOP_ASSETS_LIMIT = 10
@@ -120,7 +133,7 @@ class ScanViewSet(viewsets.ModelViewSet):
         return ScanSerializer
 
     def get_permissions(self):
-        if self.action in {"create", "cancel"}:
+        if self.action in {"create", "cancel", "exploit"}:
             return [IsAnalystOrAdmin()]
         return [ReadOnlyOrAnalyst()]
 
@@ -213,6 +226,44 @@ class ScanViewSet(viewsets.ModelViewSet):
         findings = scan.findings.select_related("scan", "asset", "vulnerability")
         serializer = FindingSerializer(findings, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def exploit(self, request: Request, pk: str | None = None) -> Response:
+        """Dispara a fase de exploração (prova de impacto) sobre os findings do scan.
+
+        Ação deliberada de analyst/admin — é o opt-in explícito (dispensa
+        ``options["exploit"]``/aggressive). Ainda gated pelo kill-switch
+        ``BYAKUGAN_EXPLOITATION_ENABLED`` e pela revalidação de escopo por
+        finding (feita no runner). Enfileira ``scans.exploit_scan`` (assíncrono)
+        e nunca reescreve findings — só cria ``Evidence`` imutável (RN003).
+        """
+        scan = self.get_object()
+        if not getattr(settings, "BYAKUGAN_EXPLOITATION_ENABLED", False):
+            record_audit(
+                "exploit.blocked",
+                user=request.user,
+                severity="warning",
+                source=client_ip(request),
+                scan_id=str(scan.id),
+                reason="kill-switch",
+            )
+            raise ExploitationDisabled()
+        if scan.status != Scan.Status.COMPLETED:
+            raise ValidationError("A exploração só pode ser disparada sobre um scan concluído.")
+
+        record_audit(
+            "exploit.request",
+            user=request.user,
+            severity="warning",
+            source=client_ip(request),
+            scan_id=str(scan.id),
+            target=scan.target,
+        )
+        result = exploit_scan.delay(str(scan.id))
+        return Response(
+            {"detail": "Exploração enfileirada.", "task_id": getattr(result, "id", None)},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
     @action(detail=True, methods=["get"])
     def services(self, request: Request, pk: str | None = None) -> Response:
@@ -313,6 +364,75 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
             status=triage.status,
         )
         return Response(FindingTriageSerializer(triage).data)
+
+
+class EvidenceViewSet(viewsets.ReadOnlyModelViewSet):
+    """Evidências de exploração (aba Evidências) — somente leitura (RN003).
+
+    ``Evidence`` é imutável: representa o que o motor de exploração de fato
+    executou e provou. Criada pelo runner (fase inline ou ``POST
+    /scans/{id}/exploit/``), nunca pela API diretamente.
+    """
+
+    queryset = Evidence.objects.select_related("finding", "asset", "scan")
+    serializer_class = EvidenceSerializer
+    permission_classes = [ReadOnlyOrAnalyst]
+    filterset_fields = ["status", "impact_level", "scan", "asset", "finding", "playbook_key"]
+    search_fields = ["playbook_key", "proof"]
+    ordering_fields = ["created_at", "impact_level", "status"]
+
+    def get_queryset(self):
+        return Evidence.objects.select_related("finding", "asset", "scan").order_by("-created_at")
+
+
+class ExploitationPlaybookViewSet(viewsets.ModelViewSet):
+    """Playbooks curados de exploração (aba Evidências).
+
+    Leitura: qualquer autenticado; escrita: analyst/admin; exclusão: admin
+    (RN006). Como a Knowledge Base, é conteúdo de referência **vivo** —
+    editável, não histórico imutável.
+    """
+
+    queryset = ExploitationPlaybook.objects.all()
+    serializer_class = ExploitationPlaybookSerializer
+    permission_classes = [ReadOnlyOrAnalyst]
+    lookup_field = "key"
+    # As keys têm ponto (ex.: ``injection.sqli-error``); o regex de lookup padrão
+    # do DRF (``[^/.]+``) exclui ``.`` e daria 404. Permite tudo menos ``/``.
+    lookup_value_regex = "[^/]+"
+    filterset_fields = ["category", "max_impact"]
+    search_fields = ["title", "vuln_class", "key", "summary"]
+    ordering_fields = ["created_at", "title", "category"]
+
+    def perform_create(self, serializer: ExploitationPlaybookSerializer) -> None:
+        playbook = serializer.save()
+        record_audit(
+            "playbook.create",
+            user=self.request.user,
+            severity="info",
+            source=client_ip(self.request),
+            playbook_key=playbook.key,
+        )
+
+    def perform_update(self, serializer: ExploitationPlaybookSerializer) -> None:
+        playbook = serializer.save()
+        record_audit(
+            "playbook.update",
+            user=self.request.user,
+            severity="info",
+            source=client_ip(self.request),
+            playbook_key=playbook.key,
+        )
+
+    def perform_destroy(self, instance: ExploitationPlaybook) -> None:
+        record_audit(
+            "playbook.delete",
+            user=self.request.user,
+            severity="warning",
+            source=client_ip(self.request),
+            playbook_key=instance.key,
+        )
+        super().perform_destroy(instance)
 
 
 class RiskOverviewView(APIView):

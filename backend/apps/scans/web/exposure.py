@@ -16,6 +16,23 @@ from typing import Any
 #: consideradas "a mesma página" para fins de comparação com o baseline.
 _SIMILAR_LENGTH_THRESHOLD = 32
 
+#: Mapeia prefixos de path sensível ao playbook de exploração correspondente
+#: (aba Evidências). Sem módulo de exploração automatizado por ora — o playbook
+#: mostra "como explorar / até onde vai" manualmente.
+_PATH_PLAYBOOKS: tuple[tuple[str, str], ...] = (
+    ("/.git", "exposure.git"),
+    ("/.env", "exposure.env"),
+    ("/actuator", "exposure.actuator"),
+)
+
+
+def _playbook_for_path(path: str) -> str:
+    """Retorna a ``playbook_key`` do path sensível (ou ``""`` se não houver)."""
+    for prefix, key in _PATH_PLAYBOOKS:
+        if path.startswith(prefix):
+            return key
+    return ""
+
 
 def _looks_like_baseline(
     *, status_code: int, body: str, baseline_status: int, baseline_body: str
@@ -83,4 +100,5 @@ def classify_exposure(
             f"Remover ou restringir o acesso a '{path}' (ex.: bloquear no servidor "
             "web, mover para fora do webroot, ou exigir autenticação)."
         ),
+        "playbook_key": _playbook_for_path(path),
     }

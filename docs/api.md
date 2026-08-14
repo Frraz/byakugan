@@ -330,6 +330,42 @@ Exclui o artigo. Restrito a `admin` (RN006).
 
 ---
 
+## Exploitation & Evidences (motor de exploração)
+
+Ver `docs/exploitation-engine.md` para a doutrina de RoE e o gating completo.
+
+### `POST /api/scans/{id}/exploit/`
+Dispara a fase de exploração (prova de impacto) sobre os findings de um scan **concluído**. Requer papel `analyst`/`admin` — é o opt-in explícito (dispensa `options.exploit`/aggressive), mas continua gated pelo kill-switch `BYAKUGAN_EXPLOITATION_ENABLED` (`503` se desligado) e pela revalidação de escopo por finding. Enfileira `scans.exploit_scan` (assíncrono) e nunca reescreve findings — só cria `Evidence` imutável.
+```json
+// 202 Accepted
+{ "detail": "Exploração enfileirada.", "task_id": "..." }
+// 503 se BYAKUGAN_EXPLOITATION_ENABLED=False
+{ "detail": "Exploração ativa está desabilitada neste ambiente (BYAKUGAN_EXPLOITATION_ENABLED=False)." }
+```
+
+### `GET /api/evidence/`
+Evidências de exploração automatizada (aba Evidências) — **read-only** (RN003, `Evidence` é imutável). Filtros: `?status=`, `?impact_level=`, `?scan=`, `?asset=`, `?finding=`, `?playbook_key=`.
+```json
+{
+  "id": "...", "finding": { "id": "...", "title": "Possível SQL injection (baseada em erro)", "severity": "critical", "category": "injection", "playbook_key": "injection.sqli-error" },
+  "scan": "...", "asset": { "id": "...", "hostname": "app.lab", "ip": "10.0.0.5", "domain": null },
+  "playbook_key": "injection.sqli-error", "status": "proven", "impact_level": "db-read",
+  "proof": "Versão do SGBD: 10.4.11-MariaDB\nTabelas acessíveis: users, sessions",
+  "steps_performed": [ { "action": "Extrair versão do SGBD", "request": "id=' AND extractvalue(...)", "response_excerpt": "...", "result": "10.4.11-MariaDB" } ],
+  "chain": [], "roe_profile": "extended", "created_at": "..."
+}
+```
+
+### `GET /api/playbooks/` · `GET /api/playbooks/{key}/`
+Guias curados de exploração por classe de vulnerabilidade (`key` = `Finding.playbook_key`, ex.: `injection.sqli-error`). Leitura para qualquer autenticado. Cada playbook traz `steps` (PoC manual), `escalation_path` ("até onde dá para ir"), `max_impact`, `tools`, `references`.
+
+### `POST /api/playbooks/` · `PATCH /api/playbooks/{key}/` · `DELETE /api/playbooks/{key}/`
+CRUD de playbooks (conteúdo vivo, como a Knowledge Base). Escrita: `analyst`/`admin`; exclusão: `admin` (RN006).
+
+> **Findings** (`GET /api/findings/`) agora incluem `playbook_key` — o elo com o playbook e a evidência de exploração.
+
+---
+
 ## Audit Logs
 
 ### `GET /api/audit-logs/`

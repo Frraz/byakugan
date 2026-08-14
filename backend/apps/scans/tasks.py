@@ -19,6 +19,7 @@ from django.db import OperationalError
 from apps.core.audit import record_audit
 
 from .adapters import ScanCancelled, ScanContext, get_adapters_for
+from .exploit.runner import run_exploitation_for_scan
 from .models import Scan
 from .parsers import FindingsSummary, PersistenceSummary, persist_findings, persist_results
 from .services import transition, update_progress
@@ -112,6 +113,7 @@ def run_scan(self, scan_id: str) -> dict:
     should_abort = _make_should_abort(str(scan.id))
     summary = PersistenceSummary()
     findings_summary = FindingsSummary()
+    exploit_summary = None
 
     try:
         hosts = expand_target(
@@ -174,6 +176,18 @@ def run_scan(self, scan_id: str) -> dict:
             findings_summary.findings += host_findings.findings
             findings_summary.vulnerabilities += host_findings.vulnerabilities
 
+        # Fase de exploração (prova de impacto) — roda DEPOIS de todos os hosts,
+        # sobre os Findings já persistidos. É gated (kill-switch dedicado +
+        # opt-in ``options["exploit"]`` + intensity aggressive + revalidação de
+        # escopo por finding); se não passar no gate, retorna sem tocar em nada.
+        def _set_phase(phase: str) -> None:
+            scan.phase = phase
+            scan.save(update_fields=["phase", "updated_at"])
+
+        exploit_summary = run_exploitation_for_scan(
+            scan, should_abort=should_abort, update_phase=_set_phase
+        )
+
     except ScanCancelled:
         record_audit("scan.cancelled", severity="warning", scan_id=str(scan.id), target=scan.target)
         return {"status": Scan.Status.CANCELLED, "reason": "cancelled_by_user"}
@@ -210,6 +224,7 @@ def run_scan(self, scan_id: str) -> dict:
         return {"status": scan.status, "reason": "cancelled_by_user"}
 
     transition(scan, Scan.Status.COMPLETED)
+    exploited = exploit_summary.proven if exploit_summary else 0
     record_audit(
         "scan.completed",
         severity="info",
@@ -220,6 +235,7 @@ def run_scan(self, scan_id: str) -> dict:
         technologies=summary.technologies,
         dns_records=summary.dns_records,
         findings=findings_summary.findings,
+        exploits_proven=exploited,
     )
     return {
         "status": scan.status,
@@ -228,4 +244,64 @@ def run_scan(self, scan_id: str) -> dict:
         "technologies": summary.technologies,
         "dns_records": summary.dns_records,
         "findings": findings_summary.findings,
+        "exploits_proven": exploited,
+    }
+
+
+@shared_task(
+    bind=True,
+    name="scans.exploit_scan",
+    time_limit=settings.SCAN_TASK_TIME_LIMIT,
+    soft_time_limit=settings.SCAN_TASK_SOFT_TIME_LIMIT,
+    max_retries=0,
+    acks_late=True,
+)
+def exploit_scan(self, scan_id: str) -> dict:
+    """Roda a fase de exploração manualmente sobre um scan já concluído.
+
+    Gatilho de ``POST /scans/{id}/exploit/`` (analyst/admin). ``manual=True``
+    dispensa o opt-in por scan/aggressive — a ação já é o opt-in explícito —,
+    mas o kill-switch ``BYAKUGAN_EXPLOITATION_ENABLED`` e a revalidação de
+    escopo por finding continuam sendo aplicados (piso inegociável). Nunca
+    reescreve findings; só cria novos registros ``Evidence`` (imutáveis, RN003).
+    """
+    scan = Scan.objects.get(id=scan_id)
+    should_abort = _make_should_abort(str(scan.id))
+
+    def _set_phase(phase: str) -> None:
+        scan.phase = phase
+        scan.save(update_fields=["phase", "updated_at"])
+
+    try:
+        exploit_summary = run_exploitation_for_scan(
+            scan, manual=True, should_abort=should_abort, update_phase=_set_phase
+        )
+    except Exception as exc:  # noqa: BLE001 — falha de exploração não derruba o worker
+        logger.exception("exploit_failed", extra={"scan_id": str(scan.id)})
+        record_audit(
+            "exploit.failed",
+            severity="critical",
+            scan_id=str(scan.id),
+            target=scan.target,
+            error=str(exc),
+        )
+        return {"status": "error", "error": str(exc)}
+
+    record_audit(
+        "exploit.run",
+        severity="warning",
+        scan_id=str(scan.id),
+        target=scan.target,
+        proven=exploit_summary.proven,
+        attempted=exploit_summary.attempted,
+        blocked=exploit_summary.blocked,
+        skipped_reason=exploit_summary.skipped_reason,
+    )
+    return {
+        "status": "ok" if exploit_summary.ran else "skipped",
+        "skipped_reason": exploit_summary.skipped_reason,
+        "attempted": exploit_summary.attempted,
+        "proven": exploit_summary.proven,
+        "failed": exploit_summary.failed,
+        "blocked": exploit_summary.blocked,
     }

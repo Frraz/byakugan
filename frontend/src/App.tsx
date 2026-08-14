@@ -7,6 +7,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AssetDetailPage } from "./pages/AssetDetailPage";
 import { AssetsPage } from "./pages/AssetsPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { EvidencePage } from "./pages/EvidencePage";
 import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ReportsPage } from "./pages/ReportsPage";
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="assets" element={<AssetsPage />} />
           <Route path="assets/:id" element={<AssetDetailPage />} />
           <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
+          <Route path="evidence" element={<EvidencePage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="knowledge" element={<KnowledgeBasePage />} />
         </Route>

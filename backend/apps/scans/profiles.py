@@ -59,6 +59,11 @@ _INTENSITY_DEFAULTS: dict[str, dict[str, Any]] = {
     },
 }
 
+#: Chaves booleanas de opções (não numéricas, não clampadas por HARD_CAPS).
+#: ``exploit`` liga a fase de exploração ativa (prova de impacto) — opt-in
+#: explícito, só honrado em ``intensity="aggressive"`` (a fase mais invasiva).
+BOOL_OPTIONS = ("exploit",)
+
 
 def profile_defaults(intensity: str) -> dict[str, Any]:
     """Retorna os padrões da intensidade informada (``normal`` se desconhecida)."""
@@ -97,5 +102,11 @@ def normalize_options(scan_type: str, raw: dict[str, Any] | None) -> dict[str, A
         except (TypeError, ValueError):
             continue
         options[key] = max(0, min(value, cap))
+
+    # Opt-in de exploração ativa: só é verdadeiro se pedido explicitamente E a
+    # intensidade for aggressive — nunca "vaza" para safe/normal, mesmo que o
+    # cliente envie exploit=True. O kill-switch global ainda é uma camada acima
+    # (settings.BYAKUGAN_EXPLOITATION_ENABLED).
+    options["exploit"] = bool(raw.get("exploit")) and intensity == "aggressive"
 
     return options

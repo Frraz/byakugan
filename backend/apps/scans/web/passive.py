@@ -50,8 +50,9 @@ def _finding(
     description: str,
     evidence: str,
     recommendation: str,
+    playbook_key: str = "",
 ) -> dict[str, Any]:
-    return {
+    finding = {
         "title": title,
         "severity": severity,
         "category": category,
@@ -59,6 +60,9 @@ def _finding(
         "evidence": evidence,
         "recommendation": recommendation,
     }
+    if playbook_key:
+        finding["playbook_key"] = playbook_key
+    return finding
 
 
 def analyze_security_headers(headers: dict[str, str], *, is_https: bool) -> list[dict[str, Any]]:
@@ -159,6 +163,7 @@ def analyze_cors(headers: dict[str, str], *, probe_origin: str) -> list[dict[str
                 ),
                 evidence="Access-Control-Allow-Origin: * ; Access-Control-Allow-Credentials: true",
                 recommendation="Usar uma allowlist explícita de origens confiáveis, nunca '*' com credenciais.",
+                playbook_key="cors.misconfig",
             )
         ]
 
@@ -176,6 +181,7 @@ def analyze_cors(headers: dict[str, str], *, probe_origin: str) -> list[dict[str
                 ),
                 evidence=f"Origin enviada: {probe_origin} → Access-Control-Allow-Origin: {acao}",
                 recommendation="Validar a origem contra uma allowlist fixa antes de refleti-la no header.",
+                playbook_key="cors.misconfig",
             )
         ]
 

@@ -7,7 +7,16 @@ from typing import Any
 from django.db.models import Count
 from rest_framework import serializers
 
-from .models import Finding, FindingTriage, Scan, Severity, Target, Vulnerability
+from .models import (
+    Evidence,
+    ExploitationPlaybook,
+    Finding,
+    FindingTriage,
+    Scan,
+    Severity,
+    Target,
+    Vulnerability,
+)
 from .validators import InvalidTarget, classify_target
 
 
@@ -117,6 +126,7 @@ class FindingSerializer(serializers.ModelSerializer):
             "evidence",
             "recommendation",
             "dedup_key",
+            "playbook_key",
             "triage_status",
             "created_at",
         )
@@ -212,6 +222,65 @@ class ScanSerializer(serializers.ModelSerializer):
         rows = obj.findings.values("severity").annotate(total=Count("id"))
         counts.update({row["severity"]: row["total"] for row in rows})
         return counts
+
+
+class FindingRefSerializer(serializers.Serializer):
+    """Resumo de finding aninhado numa evidência de exploração."""
+
+    id = serializers.UUIDField(read_only=True)
+    title = serializers.CharField(read_only=True)
+    severity = serializers.CharField(read_only=True)
+    category = serializers.CharField(read_only=True)
+    playbook_key = serializers.CharField(read_only=True)
+
+
+class EvidenceSerializer(serializers.ModelSerializer):
+    """Resultado imutável de uma exploração automatizada (aba Evidências)."""
+
+    finding = FindingRefSerializer(read_only=True)
+    asset = AssetSummarySerializer(read_only=True)
+
+    class Meta:
+        model = Evidence
+        fields = (
+            "id",
+            "finding",
+            "scan",
+            "asset",
+            "playbook_key",
+            "status",
+            "impact_level",
+            "proof",
+            "steps_performed",
+            "chain",
+            "roe_profile",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class ExploitationPlaybookSerializer(serializers.ModelSerializer):
+    """Guia curado de exploração por classe de vulnerabilidade (aba Evidências)."""
+
+    class Meta:
+        model = ExploitationPlaybook
+        fields = (
+            "id",
+            "key",
+            "title",
+            "category",
+            "vuln_class",
+            "summary",
+            "prerequisites",
+            "steps",
+            "escalation_path",
+            "max_impact",
+            "tools",
+            "references",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
 
 
 class ScanCreateSerializer(serializers.Serializer):
