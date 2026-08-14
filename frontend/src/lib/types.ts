@@ -87,6 +87,16 @@ export interface Scan {
   created_at: string;
 }
 
+/** Resumo agregado da aba de Scans (KPIs) — backend `GET /scans/stats/`. */
+export interface ScanStats {
+  total: number;
+  active: number;
+  by_status: Record<ScanStatus, number>;
+  findings_total: number;
+  findings_by_severity: SeverityCounts;
+  exploits_proven: number;
+}
+
 export interface Service {
   id: string;
   asset: string;

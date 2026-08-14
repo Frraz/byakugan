@@ -17,6 +17,7 @@ import type {
   RiskOverview,
   Scan,
   ScanOptions,
+  ScanStats,
   Service,
   Target,
   Technology,
@@ -98,6 +99,15 @@ export function useScans(params?: ScanFilters) {
   });
 }
 
+export function useScansStats() {
+  return useQuery({
+    queryKey: ["scans-stats"],
+    queryFn: () => apiFetch<ScanStats>("/scans/stats/"),
+    // Acompanha o polling da lista enquanto houver scan ativo.
+    refetchInterval: (query) => ((query.state.data?.active ?? 0) > 0 ? 4000 : false),
+  });
+}
+
 export function useScan(id: string) {
   return useQuery({
     queryKey: ["scan", id],
@@ -137,7 +147,10 @@ export function useCreateScan() {
   return useMutation({
     mutationFn: (input: CreateScanInput) =>
       apiFetch<Scan>("/scans/", { method: "POST", body: input }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["scans"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scans"] });
+      qc.invalidateQueries({ queryKey: ["scans-stats"] });
+    },
   });
 }
 
@@ -148,6 +161,7 @@ export function useCancelScan() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["scans"] });
       qc.invalidateQueries({ queryKey: ["scan", id] });
+      qc.invalidateQueries({ queryKey: ["scans-stats"] });
     },
   });
 }
@@ -158,6 +172,7 @@ export function useDeleteScan() {
     mutationFn: (id: string) => apiFetch<void>(`/scans/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["scans"] });
+      qc.invalidateQueries({ queryKey: ["scans-stats"] });
       qc.invalidateQueries({ queryKey: ["findings"] });
       qc.invalidateQueries({ queryKey: ["reports"] });
     },

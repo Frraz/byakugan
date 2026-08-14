@@ -219,6 +219,36 @@ class ScanViewSet(viewsets.ModelViewSet):
         )
         return Response(ScanSerializer(scan).data)
 
+    @action(detail=False, methods=["get"])
+    def stats(self, request: Request) -> Response:
+        """Resumo agregado da aba de Scans (KPIs) — barato (agregações, sem N+1).
+
+        Uma única leitura em vez de N queries por status no frontend; alimenta
+        os cartões de KPI da tela de Scans.
+        """
+        status_rows = Scan.objects.values("status").annotate(n=Count("id"))
+        by_status = dict.fromkeys(Scan.Status.values, 0)
+        by_status.update({row["status"]: row["n"] for row in status_rows})
+
+        severity_counts = dict.fromkeys(Severity.values, 0)
+        severity_counts.update(
+            {
+                row["severity"]: row["n"]
+                for row in Finding.objects.values("severity").annotate(n=Count("id"))
+            }
+        )
+
+        return Response(
+            {
+                "total": sum(by_status.values()),
+                "active": by_status[Scan.Status.PENDING] + by_status[Scan.Status.RUNNING],
+                "by_status": by_status,
+                "findings_total": sum(severity_counts.values()),
+                "findings_by_severity": severity_counts,
+                "exploits_proven": Evidence.objects.filter(status=Evidence.Status.PROVEN).count(),
+            }
+        )
+
     @action(detail=True, methods=["get"])
     def findings(self, request: Request, pk: str | None = None) -> Response:
         """Lista os findings produzidos pelo scan."""

@@ -2,13 +2,16 @@
 
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FileBarChart, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, Crosshair, FileBarChart, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/PageHeader";
+import { EvidenceStatusBadge, ImpactBadge } from "@/components/evidence/ImpactBadge";
+import { ExploitationTimeline } from "@/components/evidence/ExploitationTimeline";
 import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
 import { ScanDeleteDialog } from "@/components/scans/ScanDeleteDialog";
 import { ScanProgress } from "@/components/scans/ScanProgress";
+import { ScanTypeBadge } from "@/components/scans/ScanTypeBadge";
 import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -21,7 +24,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCancelScan, useScan, useScanFindings, useScanServices } from "@/hooks/useData";
+import {
+  useCancelScan,
+  useEvidence,
+  useScan,
+  useScanFindings,
+  useScanServices,
+  useTriggerExploit,
+} from "@/hooks/useData";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { usePermissions } from "@/hooks/usePermissions";
 import { errorMessage } from "@/lib/errors";
@@ -63,11 +73,13 @@ export function ScanDetailPage() {
   const scan = useScan(id);
   const findings = useScanFindings(id);
   const services = useScanServices(id);
+  const evidence = useEvidence({ scan: id });
 
   const [selected, setSelected] = useState<Finding | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const cancel = useCancelScan();
+  const exploit = useTriggerExploit();
 
   usePageTitle(scan.data ? `Scan · ${scan.data.target}` : "Scan");
 
@@ -78,6 +90,13 @@ export function ScanDetailPage() {
   const isActive = s.status === "pending" || s.status === "running";
   const findingList = findings.data ?? [];
   const counts = countSeverities(findingList);
+  const evidenceList = evidence.data?.results ?? [];
+
+  const onExploit = () =>
+    exploit.mutate(s.id, {
+      onSuccess: () => toast.success("Exploração enfileirada — os resultados aparecem aqui e em Evidências."),
+      onError: (err) => toast.error(errorMessage(err)),
+    });
 
   return (
     <div>
@@ -94,7 +113,19 @@ export function ScanDetailPage() {
         description={s.target_name ? s.target : undefined}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <ScanTypeBadge type={s.scan_type} />
             <StatusBadge status={s.status} />
+            {s.status === "completed" && canWrite && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={exploit.isPending}
+                onClick={onExploit}
+              >
+                <Crosshair className="h-4 w-4" />
+                Explorar
+              </Button>
+            )}
             {s.status === "completed" && (
               <Button variant="outline" size="sm" asChild>
                 <Link to="/reports">
@@ -183,6 +214,7 @@ export function ScanDetailPage() {
         <TabsList>
           <TabsTrigger value="findings">Findings ({findingList.length})</TabsTrigger>
           <TabsTrigger value="services">Serviços ({services.data?.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="evidence">Evidências ({evidence.data?.count ?? 0})</TabsTrigger>
           <TabsTrigger value="authorization">Autorização</TabsTrigger>
         </TabsList>
 
@@ -260,6 +292,57 @@ export function ScanDetailPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="evidence" className="mt-4">
+          {evidence.isLoading ? (
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          ) : evidenceList.length === 0 ? (
+            <EmptyState
+              icon={Crosshair}
+              title="Nenhuma exploração registrada"
+              hint={
+                s.status === "completed"
+                  ? "Use “Explorar” para provar o impacto dos findings deste scan (requer autorização e o motor de exploração habilitado)."
+                  : "A exploração roda sobre um scan concluído."
+              }
+              action={
+                s.status === "completed" &&
+                canWrite && (
+                  <Button variant="secondary" disabled={exploit.isPending} onClick={onExploit}>
+                    <Crosshair className="h-4 w-4" />
+                    Explorar
+                  </Button>
+                )
+              }
+            />
+          ) : (
+            <div className="space-y-3">
+              {evidenceList.map((ev) => (
+                <GlassPanel key={ev.id} className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <EvidenceStatusBadge status={ev.status} />
+                    {ev.impact_level !== "none" && <ImpactBadge impact={ev.impact_level} />}
+                    <span className="min-w-0 truncate font-medium text-foreground">
+                      {ev.finding?.title ?? ev.playbook_key}
+                    </span>
+                  </div>
+                  {ev.proof && (
+                    <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/5 p-2 font-mono text-xs text-foreground/90">
+                      {ev.proof}
+                    </pre>
+                  )}
+                  {ev.steps_performed.length > 0 && <ExploitationTimeline steps={ev.steps_performed} />}
+                  <Link
+                    to="/evidence"
+                    className="inline-block pt-1 text-xs text-primary hover:underline"
+                  >
+                    Ver na aba Evidências →
+                  </Link>
+                </GlassPanel>
+              ))}
             </div>
           )}
         </TabsContent>
