@@ -23,6 +23,14 @@
 
 Configuração por `.env` (ver `.env.example`). Segredos nunca versionados.
 
+### Kill-switches operacionais (ambos default `False`)
+| Env | Controla | Efeito quando `False` |
+| --- | --- | --- |
+| `BYAKUGAN_SCANNING_ENABLED` | Execução real de varredura | Scans são registrados mas não varrem — falham controlado e auditado. |
+| `BYAKUGAN_EXPLOITATION_ENABLED` | Execução de exploração (prova de impacto) | Nenhum exploit roda; tentativas são bloqueadas e auditadas (RN022). |
+
+Mantenha **ambos desligados** por padrão, inclusive em produção; ative apenas em laboratório/engajamento autorizado. A exploração exige ainda opt-in por scan ou gatilho manual e revalidação de escopo por finding (ver `docs/security.md`).
+
 ## Comandos
 
 ```bash

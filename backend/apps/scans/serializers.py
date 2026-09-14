@@ -127,6 +127,9 @@ class FindingSerializer(serializers.ModelSerializer):
             "recommendation",
             "dedup_key",
             "playbook_key",
+            "owasp_2021",
+            "owasp_2025",
+            "cwe",
             "triage_status",
             "created_at",
         )

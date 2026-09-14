@@ -14,6 +14,7 @@ from apps.assets.models import Asset, DnsRecord, Service, Technology
 
 from .adapters import RawResult
 from .models import Finding, Scan, Vulnerability
+from .owasp import resolve_owasp
 
 
 def compute_dedup_key(*, asset_id: str, category: str, title: str) -> str:
@@ -246,6 +247,11 @@ def persist_findings(scan: Scan, raw_results: list[RawResult]) -> FindingsSummar
                 summary.vulnerabilities += 1
 
         category = data.get("category", "software")
+        playbook_key = data.get("playbook_key", "")
+        # Enriquecimento OWASP centralizado aqui: adapters só emitem
+        # playbook_key/category; a classificação (2021/2025/CWE) é derivada da
+        # fonte única (apps/scans/owasp.py), nunca espalhada pelos detectores.
+        owasp_2021, owasp_2025, cwe = resolve_owasp(playbook_key=playbook_key, category=category)
         Finding.objects.create(
             scan=scan,
             asset=asset,
@@ -260,7 +266,10 @@ def persist_findings(scan: Scan, raw_results: list[RawResult]) -> FindingsSummar
             dedup_key=compute_dedup_key(
                 asset_id=str(asset.id), category=category, title=data["title"]
             ),
-            playbook_key=data.get("playbook_key", ""),
+            playbook_key=playbook_key,
+            owasp_2021=owasp_2021,
+            owasp_2025=owasp_2025,
+            cwe=cwe,
         )
         summary.findings += 1
 

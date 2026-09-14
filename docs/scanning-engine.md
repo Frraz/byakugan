@@ -107,7 +107,7 @@ class ScannerAdapter(ABC):
 | `tls` (`TlsAdapter`) | fingerprint | `ssl` (stdlib) + `cryptography` | Versão/cipher TLS negociados (`Technology`) **e** findings `category=tls`/`certificate` (`tls_analysis.py`) |
 | `cve-lookup` (`CveLookupAdapter`) | vulnerability | API NVD CVE 2.0 (`cve.py`) | Findings `category=software` — correlação de CVE por CPE (fallback keyword) |
 | `default-creds` (`DefaultCredsAdapter`) | vulnerability | `ftplib`/`requests`/sockets | Finding `category=credential` — só em `intensity=aggressive` |
-| `web-scan` (`WebScanAdapter`) | vulnerability | `requests` + `web/*.py` | Findings `web-headers`/`cookie`/`cors`/`exposure`/`http-method`/`injection` |
+| `web-scan` (`WebScanAdapter`) | vulnerability | `requests` + `web/*.py` | Findings `web-headers`/`cookie`/`cors`/`exposure`/`http-method`/`injection`/`access-control`/`auth`/`integrity` |
 
 `ADAPTERS_BY_SCAN_TYPE` mapeia `discovery`→6 adapters, `fingerprint`→2, `vulnerability`→3, `full`→todos os 11. `options["enabled_checks"]` filtra esse conjunto por `adapter.name` quando informado.
 
@@ -115,7 +115,7 @@ class ScannerAdapter(ABC):
 >
 > **DNS & subdomínios**: `SubdomainAdapter` combina wordlist curada (`data/subdomains.py`) com Certificate Transparency (crt.sh); `ZoneTransferAdapter` tenta AXFR nos NS do domínio (read-only — não altera a zona) e reporta como finding de alta severidade quando aceito; `EmailSecurityAdapter` analisa SPF (`+all`/`?all` fracos), DMARC (`p=none`) e presença de DKIM. Registros DNS não-host (MX/NS/TXT/SOA/SRV) são persistidos em `assets.DnsRecord`.
 >
-> **Testes ativos web**: `WebScanAdapter` orquestra, por porta HTTP(S) comum (80/8080/443/8443): headers de segurança e cookies (`web/passive.py`), CORS, exposição de paths sensíveis com **baseline diffing** contra um path aleatório-inexistente (`web/exposure.py`, evita falso positivo em servidor "soft 404"), métodos HTTP (`OPTIONS`/`TRACE` — nunca PUT/DELETE ativos, `web/methods.py`), crawl BFS same-origin (`web/crawler.py`) e detecção de injeção (`web/injection.py`: XSS refletido, SQLi error/boolean-based, path traversal, open redirect, SSTI, command injection, e SQLi/cmdi time-based só em `aggressive`) — até `MAX_INJECTION_POINTS=15` pontos únicos por origem.
+> **Testes ativos web**: `WebScanAdapter` orquestra, por porta HTTP(S) comum (80/8080/443/8443): headers de segurança e cookies (`web/passive.py`), CORS, exposição de paths sensíveis com **baseline diffing** contra um path aleatório-inexistente (`web/exposure.py`, evita falso positivo em servidor "soft 404"), métodos HTTP (`OPTIONS`/`TRACE` — nunca PUT/DELETE ativos, `web/methods.py`), crawl BFS same-origin (`web/crawler.py`) e detecção de injeção (`web/injection.py`: XSS refletido, SQLi error/boolean-based, path traversal, open redirect, SSTI, command injection, SSRF, e SQLi/cmdi time-based só em `aggressive`) — até `MAX_INJECTION_POINTS=15` pontos únicos por origem. Os detectores OWASP adicionais (A01 controle de acesso, A07 autenticação, A08 integridade, reforços A02/A05) estão descritos na seção **Detectores OWASP (Fase B)** abaixo.
 >
 > **Credenciais default**: `DefaultCredsAdapter` só roda em `intensity=aggressive`, com revalidação de escopo extra, e só testa portas **já confirmadas abertas** pela fase de discovery do mesmo scan (nunca abre conexão às cegas): FTP anônimo, Redis sem auth, Elasticsearch aberto, HTTP Basic com credenciais default (só se o endpoint já desafiar com 401) e Spring Boot Actuator exposto.
 >
@@ -164,7 +164,7 @@ Campos obrigatórios (RN008/RN019 — nenhum finding sem contexto, validado no p
 
 Severidade: `critical` · `high` · `medium` · `low` · `info`.
 
-Categoria (`FindingCategory`, 15 valores): `software` · `service` · `network` · `credential` · `tls` · `certificate` · `dns` · `email-security` · `subdomain` · `web-headers` · `cookie` · `cors` · `exposure` · `http-method` · `injection`.
+Categoria (`FindingCategory`, 18 valores): `software` · `service` · `network` · `credential` · `tls` · `certificate` · `dns` · `email-security` · `subdomain` · `web-headers` · `cookie` · `cors` · `exposure` · `http-method` · `injection` · `access-control` · `auth` · `integrity`.
 
 ## Performance
 - Meta: até **100 ativos simultâneos**.
@@ -214,3 +214,15 @@ Reexecutar o mesmo scan sobre o mesmo alvo cria **novos** registros de `Finding`
 - **Priorização automática**: `top_assets` — risk assessment por ativo, ordenado por `risk_score` decrescente.
 - **Agrupamento por criticidade**: `summary.severity` — contagem de findings do ambiente por severidade.
 - **Heatmap**: `heatmap` — contagem de findings por `(category, severity)`, com `category_label` (rótulo PT-BR pronto para a UI, `correlation.CATEGORY_LABELS`).
+
+## Detectores OWASP (Fase B)
+
+O `WebScanAdapter` foi estendido para cobrir os buracos do OWASP Top 10, mantendo o piso da RN016 (detecção idempotente/não-destrutiva). Todos são funções puras em `web/`, consumidas pelo seam único `WebScanAdapter._fetch`:
+
+- **A01 Broken Access Control** (`web/access_control.py`): forced browsing a endpoints administrativos (`data/web_paths.ADMIN_PATHS`, GET com `allow_redirects=False` — redirect para login não vira finding) e IDOR heurístico conservador ao variar um id numérico (categoria `access-control`).
+- **A02 Cryptographic Failures** (`web/passive.py`): login sobre HTTP (`crypto.cleartext-credentials`) e conteúdo misto em página HTTPS (`crypto.mixed-content`), além do TLS/cert já existente.
+- **A05 Security Misconfiguration** (`web/passive.py`): modo debug/stack trace exposto (`misconfig.debug-mode`).
+- **A07 Identification & Auth Failures** (`web/auth_checks.py`): enumeração de usuário via mensagem de erro (apenas formulários **GET** de login, para respeitar a idempotência da RN016; nunca bursts de POST).
+- **A08 Software & Data Integrity Failures** (`web/integrity.py`): Subresource Integrity ausente em recursos de terceiros (`integrity.missing-sri`) e bibliotecas JS desatualizadas (`data/js_libraries.py`, `integrity.vulnerable-js`).
+
+A classificação OWASP/CWE de cada finding é derivada centralmente da fonte única `owasp.py` (RN024). A matriz por scan e o mapeamento completo estão em `docs/owasp-coverage.md`.

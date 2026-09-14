@@ -47,10 +47,18 @@ Conteúdo:
       "title": "TLS 1.0 habilitado",
       "severity": "medium",
       "cvss": 5.9,
+      "owasp_2021": "A02",
+      "owasp_2025": "A04",
+      "cwe": "CWE-327",
       "evidence": "Handshake aceitou TLS 1.0 na porta 443",
       "recommendation": "Desabilitar TLS 1.0 e 1.1; exigir TLS 1.2+"
     }
-  ]
+  ],
+  "owasp_coverage": {
+    "2021": [ { "code": "A03", "label": "A03:2021 - Injection", "tested": true, "findings": 2, "highest_severity": "critical", "proven": true, "status": "proven" } ],
+    "2025": [ "... 10 categorias ..." ],
+    "summary": { "2021": { "tested": 8, "found": 3, "proven": 1, "limited": 2, "total": 10 } }
+  }
 }
 ```
 
@@ -69,6 +77,8 @@ Conteúdo:
 
 `apps/reports` — `payload.py` monta o payload acima reaproveitando o Correlation Engine (`apps.scans.correlation`) para `risk_score`/`risk_level`/`heatmap`, garantindo que o número mostrado no relatório seja **exatamente** o mesmo do dashboard. `rendering.py` é o dispatcher dos três formatos: JSON (payload completo), CSV (uma linha por finding, via `csv.DictWriter`) e PDF, delegado a `pdf.py` (via `reportlab` — puro Python, sem dependência de sistema como Pango/Cairo). `services.generate_report` grava o artefato em `MEDIA_ROOT/reports/<uuid>.<ext>` e cria o registro `Report`; nunca é servido por URL estática — só via `GET /api/reports/{id}/download/` (autenticado + auditado).
 
-**Diferenças por `report_type`**: o executivo inclui `top_risks` (ativos priorizados), `heatmap` e `narrative` (sumário narrativo — `build_executive_narrative`); o técnico inclui `assets` (inventário), `findings` (lista completa), `knowledge_articles` (artigos da Knowledge Base relacionados às categorias dos findings — um por categoria distinta, ver `build_related_knowledge`) e `references` (CVEs distintos com link NVD + `references` do catálogo — `build_references`). O CSV ignora `report_type` — é sempre a lista de findings.
+**Diferenças por `report_type`**: o executivo inclui `top_risks` (ativos priorizados), `heatmap` e `narrative` (sumário narrativo — `build_executive_narrative`); o técnico inclui `assets` (inventário), `findings` (lista completa, com `owasp_2021`/`owasp_2025`/`cwe`), `knowledge_articles` (artigos da Knowledge Base relacionados às categorias dos findings — um por categoria distinta, ver `build_related_knowledge`) e `references` (CVEs distintos com link NVD + `references` do catálogo — `build_references`). O CSV ignora `report_type` — é sempre a lista de findings.
+
+**Cobertura OWASP Top 10 (ambos os tipos)**: os dois relatórios trazem `owasp_coverage` (`build_owasp_coverage`, reaproveitando `apps.scans.owasp_coverage.compute_owasp_coverage` — a mesma fonte da API `/scans/{id}/owasp-coverage/`). No PDF, é a seção **"Cobertura OWASP Top 10"** com uma tabela A01–A10 por edição (2021 e 2025): situação (provado/encontrado/testado/cobertura limitada/não testado), nº de findings e maior severidade. É o entregável central para a banca/cliente. Ver `docs/owasp-coverage.md`.
 
 **Não implementado ainda**: logs brutos do scan no relatório técnico (hoje traz metadados — tipo, status, autorização, timestamps — mas não logs linha a linha).

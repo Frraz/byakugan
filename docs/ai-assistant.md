@@ -14,9 +14,9 @@ A **decisão final é sempre do usuário**. A IA não pode: executar ações, al
 - A chave nunca fica no código; sempre lida do ambiente.
 
 ## Fontes de dados
-Findings · Vulnerabilities · CVEs · Knowledge Base · relatórios anteriores · histórico do ambiente.
+Findings (com classificação **OWASP 2021/2025 + CWE**) · Vulnerabilities · CVEs · **`Evidence`** (impacto comprovado pela exploração) · `ExploitationPlaybook` · Knowledge Base · relatórios anteriores · histórico do ambiente.
 
-A IA opera **apenas sobre dados já coletados** pelo Byakugan — não inventa fatos nem assume exploração bem-sucedida.
+A IA opera **apenas sobre dados já coletados** pelo Byakugan — não inventa fatos. Só afirma "exploração bem-sucedida" quando existe uma `Evidence` com status `proven`; caso contrário fala em risco *potencial*.
 
 ## Capacidades
 
@@ -55,7 +55,8 @@ Confiança: Alta | Média | Baixa
 A IA não pode executar ações, alterar sistemas, excluir dados ou tomar decisões pelo usuário.
 
 ## Futuro
-- Chat com contexto completo do ambiente.
-- Consultas em linguagem natural sobre os dados.
-- Geração automática de relatórios.
-- Assistentes especializados (SOC, DevSecOps).
+Alinhado ao **norte do projeto** (ajudar a *documentar* e *orientar a remediação* de cada brecha):
+- **Orientação de remediação acionável** — a partir do finding + OWASP/CWE + `Evidence`, gerar passos de correção priorizados e específicos ao contexto (mantendo o humano no comando — RN009).
+- Chat com contexto completo do ambiente e consultas em linguagem natural sobre os dados.
+- Geração automática de relatórios e do texto narrativo.
+- Assistentes especializados (SOC, DevSecOps, Red/Blue Team).

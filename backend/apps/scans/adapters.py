@@ -1486,6 +1486,20 @@ class WebScanAdapter(ScannerAdapter):
         if listing_finding:
             results.append(self._make_finding(listing_finding, target=target, ip=ip))
 
+        # A02 Cryptographic Failures / A05 Security Misconfiguration (Fase B):
+        # conteúdo misto e página de debug/stack trace exposta na home.
+        mixed_finding = web.passive.analyze_mixed_content(base_url, body, is_https=is_https)
+        if mixed_finding:
+            results.append(self._make_finding(mixed_finding, target=target, ip=ip))
+        debug_finding = web.passive.analyze_debug_mode(base_url, status, body)
+        if debug_finding:
+            results.append(self._make_finding(debug_finding, target=target, ip=ip))
+        # A08 Integrity (Fase B): SRI ausente + bibliotecas JS desatualizadas.
+        for finding in web.integrity.analyze_sri(body, base_url=base_url):
+            results.append(self._make_finding(finding, target=target, ip=ip))
+        for finding in web.integrity.analyze_vulnerable_js(body, base_url=base_url):
+            results.append(self._make_finding(finding, target=target, ip=ip))
+
         cors_probed = self._fetch(base_url, headers={"Origin": CORS_PROBE_ORIGIN})
         if cors_probed is not None:
             _, cors_headers, _, _, _ = cors_probed
@@ -1544,6 +1558,88 @@ class WebScanAdapter(ScannerAdapter):
 
         return results
 
+    def _run_access_control(self, base_url: str, target: str, ip: str | None) -> list[RawResult]:
+        """Forced browsing (A01): endpoints admin acessíveis sem autenticação.
+
+        Só GET idempotente e ``allow_redirects=False`` — redirecionar para login
+        (3xx) é o comportamento correto e não gera finding. Compara com um
+        baseline soft-404, como ``_run_exposure``.
+        """
+        from urllib.parse import urljoin
+
+        from . import web
+        from .data.web_paths import ADMIN_PATHS
+
+        results: list[RawResult] = []
+        random_path = f"/byakugan-{secrets.token_hex(8)}-notfound"
+        baseline_probed = self._fetch(urljoin(base_url, random_path))
+        baseline_status, baseline_body = (
+            (baseline_probed[0], baseline_probed[2]) if baseline_probed else (404, "")
+        )
+        for path in ADMIN_PATHS:
+            probed = self._fetch(urljoin(base_url, path), allow_redirects=False)
+            if probed is None:
+                continue
+            status, _, body, _, _ = probed
+            full_url = urljoin(base_url, path)
+            finding = web.access_control.classify_forced_browsing(
+                url=full_url,
+                path=path,
+                status_code=status,
+                body=body,
+                baseline_status=baseline_status,
+                baseline_body=baseline_body,
+            )
+            if finding:
+                results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
+    def _run_auth(
+        self, crawl_result: Any, base_url: str, target: str, ip: str | None, is_https: bool
+    ) -> list[RawResult]:
+        """Auth failures (A07): enumeração de usuário via formulário de login GET.
+
+        Estritamente idempotente (RN016): só formulários **GET** de login são
+        sondados, submetendo um usuário claramente inexistente e inspecionando
+        a mensagem de erro (nunca POST/bursts contra o alvo). Também reporta
+        login servido sobre HTTP (falha criptográfica) a partir dos formulários.
+        """
+        from urllib.parse import urlencode
+
+        from . import web
+
+        results: list[RawResult] = []
+
+        login_finding = web.passive.analyze_login_over_http(
+            base_url, crawl_result.forms, is_https=is_https
+        )
+        if login_finding:
+            results.append(self._make_finding(login_finding, target=target, ip=ip))
+
+        seen: set[str] = set()
+        for form in crawl_result.forms:
+            if form["method"] != "GET" or not web.auth_checks.is_login_form(form):
+                continue
+            action = form["action"]
+            if action in seen:
+                continue
+            seen.add(action)
+            probe_values: dict[str, str] = {}
+            for name in form["inputs"]:
+                low = str(name).lower()
+                if any(pw in low for pw in web.auth_checks.PASSWORD_FIELD_NAMES):
+                    probe_values[name] = "byktest-invalid-Pw1"
+                else:
+                    probe_values[name] = f"byk-nouser-{secrets.token_hex(3)}"
+            probed = self._fetch(f"{action}?{urlencode(probe_values)}")
+            if probed is None:
+                continue
+            _, _, body, _, _ = probed
+            finding = web.auth_checks.detect_user_enumeration(url=action, body=body)
+            if finding:
+                results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
     def _run_injection(
         self,
         crawl_result: Any,
@@ -1577,6 +1673,27 @@ class WebScanAdapter(ScannerAdapter):
                 if evidence:
                     finding = check.to_finding(url=url, param=param, evidence=evidence)
                     results.append(self._make_finding(finding, target=target, ip=ip))
+
+            # A01 IDOR: se o valor original é um id numérico, buscar o id vizinho
+            # (GET idempotente) e comparar — heurística conservadora.
+            if web.access_control.is_idor_candidate(original_value) and baseline_probed:
+                variant_value = web.access_control.next_id(original_value)
+                variant_probed = self._fetch(
+                    web.injection.build_injected_url(url, param, variant_value)
+                )
+                if variant_probed:
+                    idor_finding = web.access_control.detect_idor(
+                        url=url,
+                        param=param,
+                        original_value=original_value,
+                        original_status=baseline_probed[0],
+                        original_body=baseline_probed[2],
+                        variant_value=variant_value,
+                        variant_status=variant_probed[0],
+                        variant_body=variant_probed[2],
+                    )
+                    if idor_finding:
+                        results.append(self._make_finding(idor_finding, target=target, ip=ip))
 
             true_payload, false_payload = web.injection.boolean_sqli_payloads(original_value)
             true_probed = self._fetch(web.injection.build_injected_url(url, param, true_payload))
@@ -1658,6 +1775,8 @@ class WebScanAdapter(ScannerAdapter):
             results.extend(self._run_passive_and_methods(base_url, target, ip, is_https))
             context.check_cancelled()
             results.extend(self._run_exposure(base_url, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_access_control(base_url, target, ip))
 
             context.check_cancelled()
             from .web.crawler import Crawler
@@ -1673,6 +1792,9 @@ class WebScanAdapter(ScannerAdapter):
                 max_pages=max_pages, max_depth=3, rate_delay=rate_delay, fetch=_crawler_fetch
             )
             crawl_result = crawler.crawl(base_url)
+
+            context.check_cancelled()
+            results.extend(self._run_auth(crawl_result, base_url, target, ip, is_https))
 
             context.check_cancelled()
             results.extend(self._run_injection(crawl_result, base_url, target, ip, intensity))

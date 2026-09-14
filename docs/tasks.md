@@ -2,7 +2,7 @@
 
 > Legenda: `[x]` concluído · `[~]` em andamento · `[ ]` pendente. Ver `docs/roadmap.md` para o detalhamento por fase.
 
-> **Pivô para motor ofensivo (pós-V1)**: após o V1 defensivo estar completo, o motor de scan foi expandido para uma plataforma de **pentest ofensivo autorizado e não-destrutivo** — cobertura máxima de vulnerabilidades (11 adapters, 15 categorias de finding) mantendo os guardrails (kill-switch, escopo fail-closed, autorização com expiração enforçada, testes ativos só de detecção). As seções de Asset Discovery/Fingerprinting/Vulnerability Assessment/Correlation Engine abaixo já refletem o estado expandido. Ver `docs/scanning-engine.md` para o detalhamento técnico completo.
+> **Pivô para motor ofensivo (pós-V1)**: após o V1 defensivo estar completo, o motor de scan foi expandido para uma plataforma de **pentest ofensivo autorizado** — cobertura máxima de vulnerabilidades (11 adapters, **18 categorias de finding**), depois um **motor de exploração** (prova de impacto sob RoE) e a **cobertura OWASP Top 10 (2021 + 2025)**, mantendo os guardrails (dois kill-switches, escopo fail-closed, autorização com expiração enforçada, detecção não-destrutiva). As seções abaixo refletem o estado expandido. Ver `docs/scanning-engine.md`, `docs/exploitation-engine.md` e `docs/owasp-coverage.md`.
 
 ## Fase 0 — Fundação
 - [x] Documentação canônica (`CLAUDE.md`, `docs/`)
@@ -58,7 +58,26 @@
 - [ ] AI Assistant (explicação, correção, resumo)
 - [x] Cobertura de testes > 80% (backend: 464 testes, ~89,70%)
 
+## Motor de Exploração (pós-V1)
+- [x] Contrato `ExploitModule` + registro por `playbook_key` (`exploit/registry.py`) espelhando o modelo de adapters
+- [x] Piso de não-dano central no seam de rede (`exploit/base.py` — allowlist de método, denylist de payload checada após decodificar, orçamento por finding — RN021)
+- [x] Orquestração com gating fail-closed (`exploit/runner.py` — kill-switch `BYAKUGAN_EXPLOITATION_ENABLED` + opt-in/aggressive ou manual + escopo por finding — RN022)
+- [x] Entidades `Evidence` (imutável — RN023), `ExploitationPlaybook` (vivo, 25 playbooks semeados), `ImpactLevel`
+- [x] Módulos: SQLi (erro/booleana), command injection, LFI, SSRF, SSTI, XSS, open redirect, forced browsing, IDOR, enumeração de usuário
+- [x] Endpoints (`POST /scans/{id}/exploit/`, `GET /evidence/`, `GET/POST /playbooks/`) + gatilho inline no `run_scan`
+- [x] Testes puros de RoE e de extração por módulo (fetch falso, sem rede/banco)
+
+## Cobertura OWASP Top 10 (pós-V1)
+- [x] Taxonomia fonte única `apps/scans/owasp.py` (2021 + 2025 + CWE) e `resolve_owasp`
+- [x] Campos `owasp_2021`/`owasp_2025`/`cwe` no `Finding` (migration 0007 + backfill) — RN024; enriquecimento central em `persist_findings`
+- [x] Novos detectores: A01 (`web/access_control.py` — forced browsing + IDOR), A07 (`web/auth_checks.py` — enumeração de usuário), A08 (`web/integrity.py` — SRI + JS desatualizado), reforços A02/A05 em `web/passive.py`
+- [x] 3 novas categorias de finding (`access-control`, `auth`, `integrity`) + 10 playbooks OWASP (migration 0008)
+- [x] Matriz de cobertura (`owasp_coverage.py` + `GET /scans/{id}/owasp-coverage/`) e seção OWASP nos relatórios (payload + PDF)
+- [x] Filtros OWASP/CWE na API de findings; testes de taxonomia, detectores, matriz, endpoint e relatório
+
 ### Backlog de UI/UX (evolução futura)
+- [ ] Aba Evidências no frontend (prova de exploração + playbook curado por finding)
+- [ ] Painel/visualização da matriz de cobertura OWASP (2021 × 2025)
 - [ ] Formulários com react-hook-form + zod (validação client-side rica)
 - [ ] Busca global (cmd-k) na topbar
 - [ ] Geração de relatórios assíncrona (Celery) para scans com muitos findings

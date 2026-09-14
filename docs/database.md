@@ -158,7 +158,7 @@ Ocorrência concreta de uma vulnerabilidade/exposição num ativo, detectada por
 | scan | FK → scans | rastreabilidade (RN005) |
 | asset | FK → assets | |
 | vulnerability | FK → vulnerabilities | nullable — nem todo finding tem CVE (ex.: TLS, exposição, injeção) |
-| category | enum | 15 valores — `software`\|`service`\|`network`\|`credential`\|`tls`\|`certificate`\|`dns`\|`email-security`\|`subdomain`\|`web-headers`\|`cookie`\|`cors`\|`exposure`\|`http-method`\|`injection` |
+| category | enum | 18 valores — `software`\|`service`\|`network`\|`credential`\|`tls`\|`certificate`\|`dns`\|`email-security`\|`subdomain`\|`web-headers`\|`cookie`\|`cors`\|`exposure`\|`http-method`\|`injection`\|`access-control`\|`auth`\|`integrity` |
 | title | string | |
 | severity | enum | ver acima |
 | cvss | decimal(3,1) | nullable |
@@ -167,6 +167,9 @@ Ocorrência concreta de uma vulnerabilidade/exposição num ativo, detectada por
 | recommendation | text | obrigatório |
 | dedup_key | string(64) | hash de `asset + category + título normalizado` — identifica o achado lógico entre execuções (não único: várias linhas compartilham o mesmo valor) |
 | playbook_key | string(64) | classe de vulnerabilidade (ex.: `injection.sqli-error`) — liga o finding ao `ExploitationPlaybook` curado e ao módulo de exploração; vazio quando não há playbook/exploit mapeado |
+| owasp_2021 | string(4) | categoria OWASP Top 10 2021 (ex.: `A03`), indexado — derivado da classe/categoria (RN024) |
+| owasp_2025 | string(4) | categoria OWASP Top 10 2025 (ex.: `A05`), indexado — derivado da classe/categoria (RN024) |
+| cwe | string(16) | CWE primário (ex.: `CWE-89`) |
 | created_at / updated_at | datetime | |
 
 > Diferente de `assets`/`services`/`technologies` (inventário corrente, deduplicado), cada `finding` é **imutável e amarrado ao scan que o gerou** (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os anteriores. `dedup_key` reconhece o "mesmo" achado entre essas reexecuções sem violar essa imutabilidade — ver `finding_triages`.
@@ -278,3 +281,4 @@ Trilha de auditoria imutável.
 - **Semântica de deleção de scan**: no schema, `findings.scan` e `reports.scan` usam `PROTECT` (rede de segurança contra deleções acidentais). A exclusão administrativa de um scan (RN014) é feita **em cascata pelo service** (`apps.scans.services.delete_scan`), dentro de uma transação, removendo findings, relatórios e artefatos em disco — nunca por CASCADE de banco.
 - **Findings sempre com contexto**: `description`, `evidence` e `recommendation` são obrigatórios.
 - **Autorização**: `scans.authorized_by` obrigatório antes da execução.
+- **Classificação OWASP (RN024)**: `findings.owasp_2021` e `findings.owasp_2025` (`CharField(4)`, ex.: `"A03"`, indexados) + `findings.cwe` (`CharField(16)`, ex.: `"CWE-89"`) — derivados de `playbook_key`/`category` pela fonte única `apps/scans/owasp.py` em `parsers.persist_findings`; vazios em linhas antigas/sem mapeamento (retrocompatível). A migration `0007_finding_owasp_classification` adiciona os campos e faz backfill das linhas existentes. Novas categorias de finding: `access-control`, `auth`, `integrity` (Fase B). Ver `docs/owasp-coverage.md`.

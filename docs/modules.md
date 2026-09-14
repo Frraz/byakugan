@@ -18,11 +18,16 @@
 - **Saída:** `assets`, `services`.
 - **Depende de:** Scans (adapters).
 
-## Scans (Scanning Engine)
-- **Responsabilidade:** criar, validar, enfileirar e orquestrar scans; scanner adapters.
+## Scans (Scanning Engine + Exploitation Engine)
+- **Responsabilidade:** criar, validar, enfileirar e orquestrar scans; scanner adapters (detecção); classificação e cobertura OWASP; e o motor de exploração (prova de impacto).
 - **Entrada:** requisição de scan (alvo + autorização).
-- **Saída:** estados do scan, resultados brutos → parsers.
-- **Depende de:** Celery/Redis, Assets, Vulnerabilities.
+- **Saída:** estados do scan, resultados brutos → parsers; findings classificados no OWASP 2021/2025 + CWE; `Evidence` de exploração.
+- **Depende de:** Celery/Redis, Assets.
+- **Submódulos-chave:**
+  - `adapters.py` + `web/` — detecção não-destrutiva (RN016), 11 adapters, 18 categorias.
+  - `owasp.py` / `owasp_coverage.py` — taxonomia fonte única (RN024) + matriz de cobertura por scan.
+  - `exploit/` — motor de exploração: contrato `ExploitModule` por `playbook_key` (`registry.py`), orquestração com gating (`runner.py`) e piso de não-dano central no seam de rede (`base.py`) — RN021–RN023.
+  - `correlation.py` — risk score, priorização, heatmap; `parsers.py` — normalização/persistência + enriquecimento OWASP.
 
 ## Vulnerabilities (Vulnerability Assessment)
 - **Responsabilidade:** catálogo de vulnerabilidades e findings por ativo.
@@ -61,8 +66,10 @@
 ```
 Core ← (todos)
 Accounts ← (todos, via auth)
-Scans → Assets, Vulnerabilities
-Vulnerabilities → Correlation → Reporting
-Vulnerabilities, Correlation, KnowledgeBase → AI Assistant
-Assets, Vulnerabilities, Correlation → Dashboard
+Scans → Assets
+Scans(Detecção) → Findings → OWASP (classificação 2021/2025 + CWE)
+Findings → Exploitation → Evidence (gated, RoE)
+Findings → Correlation → Risk + Cobertura OWASP → Reporting
+Findings, Correlation, Evidence, KnowledgeBase → AI Assistant (planejado)
+Assets, Findings, Correlation, Cobertura OWASP → Dashboard
 ```

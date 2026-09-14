@@ -10,6 +10,8 @@
 
 O objetivo é **descomplicar** o trabalho de equipes de pentest, Red Team, SOC, Blue Team, DevSecOps e analistas de segurança, reunindo em uma única interface a **cobertura máxima possível** de descoberta e detecção de vulnerabilidades — o que hoje exige dezenas de ferramentas separadas (nmap, Burp/ZAP, OpenVAS/Nessus, sqlmap, etc.) — sem depender de binários externos (motor 100% pure-Python).
 
+> **Norte do projeto:** ser um sistema ofensivo autorizado que ajuda profissionais e empresas de cibersegurança a **encontrar** cada brecha que um atacante mal-intencionado poderia explorar, **documentar** cada uma com evidência e prova de impacto, e **orientar a remediação** — evoluindo continuamente rumo à cobertura mais completa possível da superfície de ataque, sempre sob autorização e RoE de não-dano. A cobertura total é aspiração de longo prazo (norte), não garantia. Ver `docs/roadmap.md` (Visão de longo prazo).
+
 > **Posicionamento**: o Byakugan **é** uma ferramenta ofensiva — executa testes ativos de vulnerabilidade (credenciais default, injeção, exposição de arquivos, etc.) **e explora as falhas detectadas para comprovar impacto real** (motor de exploração — ver `docs/exploitation-engine.md`). A exploração é **detecção-para-prova sob Regras de Engajamento (RoE) de não-dano**: o Byakugan vai até comprovar o impacto e mostrar *até onde a falha chega* (ex.: extrair versão/amostra do banco via SQLi, rodar `id` via command injection, alcançar metadata interna via SSRF), **mas nunca destrói ou altera dados, nunca causa DoS, nunca cria persistência/backdoor e nunca exfiltra dados em massa**. Só roda contra alvos com **autorização explícita, documentada e não-expirada**, com opt-in por scan, atrás de um kill-switch dedicado, e tudo auditado. Esse enquadramento — ofensivo e capaz de provar impacto, porém seguro e legal por design (é como um pentest real opera sob contrato) — é o que torna a ferramenta defensável perante a banca da FIAP e utilizável em um pentest real. Ver `docs/scanning-engine.md` (detecção) e `docs/exploitation-engine.md` (exploração + RoE) para os guardrails técnicos.
 
 Projeto acadêmico do curso de **Segurança Cibernética da FIAP**.
@@ -41,11 +43,13 @@ O sistema deve:
 1. Descobrir ativos de rede (hosts, sub-redes, DNS, subdomínios, transferência de zona).
 2. Identificar tecnologias utilizadas (fingerprinting de OS, servidores, frameworks, TLS/certificado).
 3. Avaliar exposição de serviços (portas, protocolos, headers, cookies, CORS, credenciais default).
-4. Detectar vulnerabilidades conhecidas e ativas, de forma não-destrutiva (CVE/CVSS via CPE, injeção, exposição de arquivos).
-5. Correlacionar riscos, deduplicar/triar achados entre execuções e priorizar correções.
-6. Gerar relatórios executivos e técnicos.
-7. Auxiliar na remediação (Knowledge Base + IA assistente).
-8. Manter histórico imutável de análises para auditoria.
+4. Detectar vulnerabilidades conhecidas e ativas, de forma não-destrutiva (CVE/CVSS via CPE, injeção, exposição de arquivos, controle de acesso, autenticação, integridade).
+5. Classificar cada achado no **OWASP Top 10 (2021 e 2025) + CWE** e reportar a cobertura por scan (RN024; ver `docs/owasp-coverage.md`).
+6. **Comprovar impacto** explorando as falhas detectadas sob RoE de não-dano (motor de exploração — `docs/exploitation-engine.md`).
+7. Correlacionar riscos, deduplicar/triar achados entre execuções e priorizar correções.
+8. Gerar relatórios executivos e técnicos.
+9. Auxiliar na remediação (Knowledge Base + IA assistente).
+10. Manter histórico imutável de análises para auditoria.
 
 ---
 
@@ -186,6 +190,7 @@ Nenhuma feature é considerada "pronta" sem esses cinco itens.
 | `docs/security.md` | Arquitetura de segurança do próprio Byakugan |
 | `docs/scanning-engine.md` | Motor de análise e scanner adapters (detecção) |
 | `docs/exploitation-engine.md` | Motor de exploração (prova de impacto + RoE) e aba Evidências |
+| `docs/owasp-coverage.md` | Cobertura OWASP Top 10 (2021 + 2025): mapeamento detector→categoria, matriz por scan e CWE |
 | `docs/ai-assistant.md` | Analista virtual de IA |
 | `docs/modules.md` | Especificação de cada módulo |
 | `docs/domain-model.md` | Entidades, agregados e bounded contexts (DDD) |

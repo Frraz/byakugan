@@ -41,7 +41,13 @@ Descoberta de hosts, DNS, subdomínios e serviços. Gera o inventário de ativos
 Identificação de OS, servidores web, frameworks e tecnologias → Technology Profile.
 
 ### Vulnerability Assessment
-Correlação de software/versão com base CVE e cálculo/importação de CVSS → Findings.
+Correlação de software/versão com base CVE e cálculo/importação de CVSS, além de testes ativos não-destrutivos (web, credenciais, injeção, controle de acesso, autenticação, integridade) → Findings.
+
+### OWASP Classification & Coverage
+Todo `Finding` é classificado no OWASP Top 10 **2021 e 2025** + CWE, a partir da fonte única `apps/scans/owasp.py` (`resolve_owasp`), preenchido centralmente em `parsers.persist_findings` (RN024). A matriz de cobertura por scan (`owasp_coverage.py`) responde "o alvo tem cada uma das 10?". Ver `docs/owasp-coverage.md`.
+
+### Exploitation Engine
+Sobre findings já detectados, executa o exploit para **comprovar impacto real** sob Regras de Engajamento de não-dano (RN021–RN023). Vive em `apps/scans/exploit/` e espelha o modelo de plugin dos adapters (contrato `ExploitModule` registrado por `playbook_key`), com o piso de não-dano central no seam de rede e gating fail-closed. Produz `Evidence` imutável, correlata ao `ExploitationPlaybook` curado. Ver `docs/exploitation-engine.md`.
 
 ### Correlation Engine
 Agrupa vulnerabilidades, elimina duplicidades, calcula risk score e prioriza → Risk Assessment.
@@ -64,11 +70,12 @@ Logs estruturados (JSON) e trilha de auditoria imutável de todos os eventos sen
 2. API valida (formato, duplicidade, permissões) e persiste o scan como `PENDING`.
 3. Scan é enfileirado no Celery; muda para `RUNNING`.
 4. Workers executam os módulos (Discovery → Fingerprint → Vulnerability) via **scanner adapters**.
-5. Parsers normalizam a saída; resultados são persistidos (assets, services, findings).
-6. Correlation Engine processa os findings e calcula o risco.
-7. Scan vira `COMPLETED`; dashboards e relatórios refletem os novos dados.
+5. Parsers normalizam a saída; resultados são persistidos (assets, services, findings) — cada finding recebe a classificação OWASP 2021/2025 + CWE (`resolve_owasp`).
+6. **(Opcional, gated)** Se a exploração estiver habilitada e autorizada (kill-switch + opt-in/manual + escopo por finding), o Exploitation Engine roda sobre os findings e grava `Evidence` imutável.
+7. Correlation Engine processa os findings e calcula o risco.
+8. Scan vira `COMPLETED`; dashboards, matriz de cobertura OWASP e relatórios refletem os novos dados.
 
-Ver `docs/scanning-engine.md` para os estados e o detalhamento do motor.
+Ver `docs/scanning-engine.md` (detecção), `docs/exploitation-engine.md` (exploração) e `docs/owasp-coverage.md` (cobertura) para o detalhamento.
 
 ## Decisões arquiteturais
 

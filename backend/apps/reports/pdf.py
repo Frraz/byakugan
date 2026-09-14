@@ -287,6 +287,81 @@ def _summary_cards(summary: dict[str, Any]) -> Table:
     return table
 
 
+_OWASP_STATUS_PT = {
+    "proven": "Provado",
+    "found": "Encontrado",
+    "tested": "Testado",
+    "limited": "Cobertura limitada",
+    "not-tested": "Não testado",
+}
+_OWASP_STATUS_COLOR = {
+    "proven": colors.HexColor("#DC2626"),
+    "found": colors.HexColor("#F97316"),
+    "tested": colors.HexColor("#059669"),
+    "limited": MUTED,
+    "not-tested": colors.HexColor("#94A3B8"),
+}
+
+
+def _owasp_edition_table(edition_rows: list[dict[str, Any]]) -> Table:
+    """Tabela A01–A10 de uma edição OWASP: categoria, status, findings, severidade."""
+    rows = [["OWASP", "Categoria", "Situação", "Findings", "Maior sev."]]
+    statuses: list[str] = []
+    for entry in edition_rows:
+        # O rótulo já vem como "A01:2021 - Broken Access Control"; separa código
+        # e nome para caber na tabela.
+        label = entry["label"]
+        code, _, name = label.partition(" - ")
+        sev = entry["highest_severity"]
+        rows.append(
+            [
+                code,
+                Paragraph(name or label, STYLES["small"]),
+                _OWASP_STATUS_PT.get(entry["status"], entry["status"]),
+                str(entry["findings"]),
+                SEVERITY_LABELS_PT.get(sev, "—") if sev else "—",
+            ]
+        )
+        statuses.append(entry["status"])
+    table = _styled_table(rows, [2.6 * cm, 6.4 * cm, 3.4 * cm, 1.8 * cm, 1.8 * cm])
+    # Colore a coluna "Situação" pelo status.
+    style = []
+    for i, st in enumerate(statuses, start=1):
+        color = _OWASP_STATUS_COLOR.get(st)
+        if color:
+            style.append(("TEXTCOLOR", (2, i), (2, i), color))
+            style.append(("FONTNAME", (2, i), (2, i), "Helvetica-Bold"))
+    table.setStyle(TableStyle(style))
+    return table
+
+
+def _owasp_coverage_section(payload: dict[str, Any]) -> list:
+    """Seção 'Cobertura OWASP Top 10' (2021 + 2025) — o entregável central."""
+    coverage = payload.get("owasp_coverage")
+    if not coverage:
+        return []
+    story: list = [Paragraph("Cobertura OWASP Top 10", STYLES["h2"])]
+    summary = coverage.get("summary", {})
+    for edition in ("2021", "2025"):
+        rows = coverage.get(edition)
+        if not rows:
+            continue
+        s = summary.get(edition, {})
+        story.append(Paragraph(f"Edição {edition}", STYLES["h3"]))
+        story.append(
+            Paragraph(
+                f"Testadas: {s.get('tested', 0)}/{s.get('total', 10)} · "
+                f"Com findings: {s.get('found', 0)} · Provadas: {s.get('proven', 0)} · "
+                f"Cobertura limitada: {s.get('limited', 0)}.",
+                STYLES["muted"],
+            )
+        )
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(_owasp_edition_table(rows))
+        story.append(Spacer(1, 0.35 * cm))
+    return story
+
+
 def _executive_story(payload: dict[str, Any]) -> list:
     story: list = [Paragraph("Sumário executivo", STYLES["h2"])]
     story.append(Paragraph(payload.get("narrative", ""), STYLES["body"]))
@@ -313,6 +388,9 @@ def _executive_story(payload: dict[str, Any]) -> list:
     if len(rows) == 1:
         rows.append(["—", "—", "—", "—"])
     story.append(_styled_table(rows, [7 * cm, 3 * cm, 3 * cm, 3 * cm]))
+
+    story.append(Spacer(1, 0.5 * cm))
+    story += _owasp_coverage_section(payload)
     return story
 
 
@@ -385,6 +463,9 @@ def _technical_story(payload: dict[str, Any]) -> list:
             severities=[f["severity"] for f in findings],
         )
     )
+
+    story.append(Spacer(1, 0.5 * cm))
+    story += _owasp_coverage_section(payload)
 
     references = payload.get("references", [])
     if references:

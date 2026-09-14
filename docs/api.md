@@ -210,7 +210,7 @@ Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`, `?category=`, 
   "dedup_key": "a3f5...", "triage_status": "open"
 }
 ```
-> `category`: uma das 15 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado).
+> `category`: uma das 18 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado).
 
 ### `POST /api/findings/{id}/triage/`
 Classifica o achado lógico (por `dedup_key`, RN018) — afeta **todos** os `Finding` passados e futuros que compartilham o mesmo `dedup_key`, sem alterar o `Finding` em si (RN003). Requer papel `analyst` ou `admin`; auditado (`finding.triage`, RN011).
@@ -390,3 +390,36 @@ Trilha de auditoria imutável. **Somente `admin`** (RNF007 / RN011). Read-only. 
 ```
 
 Ver `docs/ai-assistant.md` para o formato completo e limitações.
+
+## Cobertura OWASP Top 10
+
+Todo `Finding` retornado pela API inclui a classificação OWASP das duas edições e o CWE primário (RN024):
+
+```json
+{ "category": "injection", "playbook_key": "injection.sqli-error",
+  "owasp_2021": "A03", "owasp_2025": "A05", "cwe": "CWE-89" }
+```
+
+Os findings podem ser filtrados por `?owasp_2021=A03`, `?owasp_2025=A05` ou `?cwe=CWE-89` (em `/api/findings/`).
+
+**`GET /api/scans/{id}/owasp-coverage/`** — matriz de cobertura OWASP do scan (2021 + 2025). Leitura (analyst/viewer). Resposta:
+
+```json
+{
+  "2021": [
+    { "code": "A03", "label": "A03:2021 - Injection", "tested": true,
+      "limited_coverage": false, "findings": 2, "highest_severity": "critical",
+      "proven": true, "status": "proven" },
+    { "code": "A04", "label": "A04:2021 - Insecure Design", "tested": false,
+      "limited_coverage": true, "findings": 0, "highest_severity": null,
+      "proven": false, "status": "limited" }
+  ],
+  "2025": [ ... 10 categorias ... ],
+  "summary": {
+    "2021": { "tested": 8, "found": 3, "proven": 1, "limited": 2, "total": 10 },
+    "2025": { "tested": 7, "found": 3, "proven": 1, "limited": 3, "total": 10 }
+  }
+}
+```
+
+`status` de cada célula: `proven` > `found` > `tested` > `limited` > `not-tested`. Ver `docs/owasp-coverage.md`.

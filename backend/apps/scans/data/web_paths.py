@@ -48,3 +48,34 @@ SENSITIVE_PATHS: dict[str, str | None] = {
     "/telescope": None,
     "/_profiler": None,
 }
+
+
+#: Endpoints administrativos/de gestão testados por ``web.access_control``
+#: (forced browsing → OWASP A01). Diferente de ``SENSITIVE_PATHS`` (que reporta
+#: a mera existência de um arquivo/painel como exposição/A05), aqui o objetivo
+#: é detectar **acesso não-autenticado a funcionalidade administrativa** — o
+#: classificador só reporta quando a resposta traz conteúdo real (não uma tela
+#: de login/negação). Só GET idempotente, nunca escrita.
+ADMIN_PATHS: tuple[str, ...] = (
+    "/admin/",
+    "/admin/dashboard",
+    "/admin/index.php",
+    "/administrator/",
+    "/manage/",
+    "/management/",
+    "/dashboard/",
+    "/panel/",
+    "/cpanel/",
+    "/wp-admin/",
+    "/user/admin",
+    "/admin/users",
+    "/admin/config",
+    "/admin/settings",
+    "/api/admin",
+    "/api/users",
+    "/api/v1/users",
+    "/settings/",
+    "/config/",
+    "/phpmyadmin/",
+    "/adminer.php",
+)

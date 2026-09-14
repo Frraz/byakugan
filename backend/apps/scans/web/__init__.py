@@ -13,6 +13,24 @@ Os submódulos são importados aqui explicitamente para que
 ``adapters.py`` sem depender da ordem de import de cada submódulo.
 """
 
-from . import crawler, exposure, injection, methods, passive
+from . import (
+    access_control,
+    auth_checks,
+    crawler,
+    exposure,
+    injection,
+    integrity,
+    methods,
+    passive,
+)
 
-__all__ = ["crawler", "exposure", "injection", "methods", "passive"]
+__all__ = [
+    "access_control",
+    "auth_checks",
+    "crawler",
+    "exposure",
+    "injection",
+    "integrity",
+    "methods",
+    "passive",
+]

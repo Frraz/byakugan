@@ -257,6 +257,43 @@ class ScanViewSet(viewsets.ModelViewSet):
         serializer = FindingSerializer(findings, many=True)
         return Response(serializer.data)
 
+    @action(detail=True, methods=["get"], url_path="owasp-coverage")
+    def owasp_coverage(self, request: Request, pk: str | None = None) -> Response:
+        """Matriz de cobertura OWASP Top 10 (2021 + 2025) deste scan.
+
+        Para cada uma das 10 categorias de cada edição: se foi testada (algum
+        detector do scan a exercita), quantos findings caíram nela, a maior
+        severidade e se o motor de exploração comprovou impacto. Responde
+        objetivamente "o alvo tem cada uma das 10?" — o entregável central da
+        cobertura OWASP. Computado sob demanda (RN003), como o Correlation
+        Engine: nunca desatualiza.
+        """
+        from .adapters import get_adapters_for
+        from .owasp_coverage import compute_owasp_coverage
+
+        scan = self.get_object()
+        adapters_run = [a.name for a in get_adapters_for(scan.scan_type, scan.options)]
+        finding_rows = list(
+            scan.findings.values("owasp_2021", "owasp_2025", "severity", "dedup_key")
+        )
+        proven_playbook_keys = set(
+            scan.evidences.filter(status=Evidence.Status.PROVEN).values_list(
+                "playbook_key", flat=True
+            )
+        )
+        excluded_dedup_keys = set(
+            FindingTriage.objects.filter(status__in=FindingTriage.RESOLVED_STATUSES).values_list(
+                "dedup_key", flat=True
+            )
+        )
+        coverage = compute_owasp_coverage(
+            finding_rows=finding_rows,
+            adapters_run=adapters_run,
+            proven_playbook_keys=proven_playbook_keys,
+            excluded_dedup_keys=excluded_dedup_keys,
+        )
+        return Response(coverage)
+
     @action(detail=True, methods=["post"])
     def exploit(self, request: Request, pk: str | None = None) -> Response:
         """Dispara a fase de exploração (prova de impacto) sobre os findings do scan.
@@ -343,8 +380,8 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Finding.objects.select_related("scan", "asset", "vulnerability")
     serializer_class = FindingSerializer
     permission_classes = [ReadOnlyOrAnalyst]
-    filterset_fields = ["severity", "asset", "scan", "category"]
-    search_fields = ["title", "category", "vulnerability__cve"]
+    filterset_fields = ["severity", "asset", "scan", "category", "owasp_2021", "owasp_2025", "cwe"]
+    search_fields = ["title", "category", "vulnerability__cve", "cwe"]
     ordering_fields = ["created_at", "severity", "cvss"]
 
     def get_queryset(self):

@@ -46,6 +46,9 @@ class FindingCategory(models.TextChoices):
     EXPOSURE = "exposure", "Exposição"
     HTTP_METHOD = "http-method", "Método HTTP"
     INJECTION = "injection", "Injeção"
+    ACCESS_CONTROL = "access-control", "Controle de acesso"
+    AUTH = "auth", "Autenticação"
+    INTEGRITY = "integrity", "Integridade de software/dados"
 
 
 class Target(BaseModel):
@@ -173,6 +176,15 @@ class Finding(BaseModel):
     #: único aqui de propósito: cada reexecução cria um novo Finding (RN003),
     #: todos compartilhando o mesmo dedup_key.
     dedup_key = models.CharField(max_length=64, db_index=True, blank=True, default="")
+    #: Classificação OWASP Top 10 (fonte única: ``apps/scans/owasp.py``),
+    #: derivada de ``playbook_key``/``category`` em ``parsers.persist_findings``.
+    #: Duas edições porque divergem (ex.: SSRF é A10:2021 e A01:2025). Vazio em
+    #: linhas antigas/sem classe mapeada (retrocompatível, como ``playbook_key``).
+    owasp_2021 = models.CharField(max_length=4, db_index=True, blank=True, default="")
+    owasp_2025 = models.CharField(max_length=4, db_index=True, blank=True, default="")
+    #: CWE primário (ex.: ``"CWE-89"``). Torna o CWE consultável de primeira
+    #: classe no finding (antes só existia como link de texto no playbook).
+    cwe = models.CharField(max_length=16, blank=True, default="")
     #: Chave estável da classe de vulnerabilidade (ex.: ``injection.sqli-error``,
     #: ``exposure.git``, ``credential.default``) — Fase 7+. Liga o finding ao
     #: ``ExploitationPlaybook`` curado (aba Evidências) e ao ``ExploitModule``

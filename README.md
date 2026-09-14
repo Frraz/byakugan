@@ -6,11 +6,13 @@
 
 _See Everything. Detect Everything._
 
-Plataforma ofensiva de **pentest profissional autorizado** — descoberta de ativos, fingerprinting, testes ativos de vulnerabilidade não-destrutivos, correlação de risco e apoio à remediação, em uma única interface.
+Plataforma ofensiva de **pentest profissional autorizado** — descoberta de ativos, fingerprinting, testes ativos de vulnerabilidade não-destrutivos, **exploração para prova de impacto** sob Regras de Engajamento, **cobertura OWASP Top 10 (2021 + 2025)**, correlação de risco e apoio à remediação, em uma única interface.
 
 Projeto acadêmico do curso de **Segurança Cibernética da FIAP**.
 
 </div>
+
+> **Norte do projeto:** ser um sistema ofensivo de detecção de vulnerabilidades, de uso autorizado, que ajuda profissionais e empresas de cibersegurança a **encontrar** cada brecha que um atacante mal-intencionado poderia explorar, **documentar** cada uma com evidência e prova de impacto, e **orientar a remediação** — evoluindo continuamente rumo à cobertura mais completa possível da superfície de ataque, sempre com autorização explícita e sob RoE de não-dano. A cobertura total é o norte (aspiração de longo prazo), não uma garantia.
 
 ---
 
@@ -22,10 +24,11 @@ Este é um **protótipo de uso restrito** (nunca destinado ao público). Várias
 
 - **Autorização obrigatória por escopo (RN007):** todo scan valida o alvo — inclusive cada host expandido de um CIDR/lista — contra um `authorization_scope` registrado antes de executar; alvos fora do escopo são bloqueados e auditados.
 - **Expiração de autorização enforçada (RN015):** um `Target` com `authorization_expires_at` vencido bloqueia novos scans, reavaliado a cada tentativa.
-- **Kill-switch global (`BYAKUGAN_SCANNING_ENABLED`, padrão `False`):** com o switch desligado, scans são registrados mas **não** executam varredura real — falham de forma controlada e auditada. Ative-o apenas em um laboratório autorizado.
-- **Testes ativos são sempre detecção, nunca exploração (RN016):** não-destrutivos, idempotentes, com marcadores inertes em vez de payloads vivos — nenhuma funcionalidade altera, apaga ou indisponibiliza dados/serviços do alvo.
+- **Dois kill-switches globais, ambos padrão `False`:** `BYAKUGAN_SCANNING_ENABLED` (varredura) e `BYAKUGAN_EXPLOITATION_ENABLED` (exploração). Com o switch desligado, a operação é registrada mas **não** executa — falha de forma controlada e auditada. Ative apenas em laboratório autorizado.
+- **Detecção é sempre não-destrutiva (RN016):** idempotente (GET/OPTIONS/TRACE), com marcadores inertes em vez de payloads vivos — nada altera, apaga ou indisponibiliza dados/serviços do alvo.
+- **Exploração é detecção-para-prova sob RoE de não-dano (RN021–RN023):** o motor *executa* o exploit sobre findings já detectados **para comprovar impacto real** (ex.: extrair versão do banco via SQLi, `id` via command injection, metadata interna via SSRF), mas **nunca** destrói/altera dados, causa DoS, cria persistência ou exfiltra em massa. É gated fail-closed: kill-switch dedicado **+** opt-in por scan (ou gatilho manual) **+** revalidação de escopo por finding, tudo auditado.
 
-Ver [`docs/scanning-engine.md`](docs/scanning-engine.md) e [`docs/security.md`](docs/security.md).
+Ver [`docs/scanning-engine.md`](docs/scanning-engine.md), [`docs/exploitation-engine.md`](docs/exploitation-engine.md) e [`docs/security.md`](docs/security.md).
 
 ---
 
@@ -49,6 +52,8 @@ Arquitetura: **modular monolith** (Clean Architecture + DDD), API-first, process
 | 6 | Knowledge Base | ✅ Concluída |
 | — | Overhaul de UI/UX (design system shadcn/ui, CRUD de targets, exclusão de scans, relatórios profissionais) | ✅ Concluída |
 | — | Motor ofensivo (11 scanner adapters, perfis de intensidade, progresso/cancelamento, dedup/triagem) | ✅ Concluída |
+| — | Motor de exploração (prova de impacto sob RoE, aba Evidências, playbooks, gating fail-closed) | ✅ Concluída |
+| — | Cobertura OWASP Top 10 (2021 + 2025): classificação por finding, detectores A01/A07/A08, matriz de cobertura, seção nos relatórios | ✅ Concluída |
 | 7 | AI Assistant | ⏳ Planejada |
 
 Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para o detalhamento.
@@ -59,9 +64,11 @@ Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para
 - **RBAC** — papéis `admin` / `analyst` / `viewer` aplicados por permission classes em cada endpoint.
 - **Auditoria imutável** — todo evento sensível (login, criação/cancelamento de scan, triagem de achado, cadastro/exclusão de alvo) é registrado em uma trilha append-only, consultável por admins.
 - **Cadastro de alvos (`Target`)** — autorização reutilizável, validação de formato (host/domínio/IP/CIDR), escopo e **expiração enforçada a cada scan** (RN015).
-- **Motor de scan ofensivo (11 adapters, pure-Python)** — enfileiramento assíncrono, máquina de estados (`pending → running → completed/failed/cancelled`), progresso (`0–100%`) e fase corrente em tempo real, cancelamento cooperativo, **perfis de intensidade** (`safe`/`normal`/`aggressive` — portas, wordlist, checks habilitados). Cobre: descoberta de hosts/DNS, portas TCP (top16/100/1000) com banner grabbing, probes UDP, **enumeração de subdomínios** (wordlist + Certificate Transparency), **transferência de zona (AXFR)**, **segurança de e-mail** (SPF/DMARC/DKIM), fingerprint HTTP, **TLS e certificado completo** (protocolo/cipher fracos, expiração, self-signed, hostname mismatch, chave/assinatura fracas), **correlação de CVE por CPE** (NVD, fallback por palavra-chave), **credenciais default** (FTP/Redis/Elasticsearch/painéis HTTP, só `aggressive`) e **testes ativos web** (headers de segurança, cookies, CORS, exposição de arquivos sensíveis, métodos HTTP perigosos, detecção de injeção XSS/SQLi/traversal/SSTI/cmdi/open redirect) — todos **não-destrutivos por design** (RN016).
+- **Motor de scan ofensivo (11 adapters, pure-Python)** — enfileiramento assíncrono, máquina de estados (`pending → running → completed/failed/cancelled`), progresso (`0–100%`) e fase corrente em tempo real, cancelamento cooperativo, **perfis de intensidade** (`safe`/`normal`/`aggressive` — portas, wordlist, checks habilitados). Cobre: descoberta de hosts/DNS, portas TCP (top16/100/1000) com banner grabbing, probes UDP, **enumeração de subdomínios** (wordlist + Certificate Transparency), **transferência de zona (AXFR)**, **segurança de e-mail** (SPF/DMARC/DKIM), fingerprint HTTP, **TLS e certificado completo** (protocolo/cipher fracos, expiração, self-signed, hostname mismatch, chave/assinatura fracas), **correlação de CVE por CPE** (NVD, fallback por palavra-chave), **credenciais default** (FTP/Redis/Elasticsearch/painéis HTTP, só `aggressive`) e **testes ativos web** (headers de segurança, cookies, CORS, exposição de arquivos sensíveis, métodos HTTP perigosos, injeção XSS/SQLi/traversal/SSTI/cmdi/open redirect/SSRF, **broken access control** — forced browsing + IDOR, **falhas de autenticação** — enumeração de usuário, **falhas de integridade** — SRI ausente + bibliotecas JS desatualizadas, e **falhas criptográficas** — login sobre HTTP, mixed content, debug exposto) — todos **não-destrutivos por design** (RN016).
 - **Inventário de ativos** — hosts, serviços, registros DNS e tecnologias descobertos (*technology profile*: SO, servidor web, framework, linguagem, CMS, frontend, TLS), com histórico imutável.
-- **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan em **15 categorias**, com evidência e recomendação (RN008, enforçado no modelo); pipeline em duas fases por host garante que os adapters de vulnerabilidade sempre leiam o profile mais recente do próprio scan.
+- **Vulnerability Assessment** — catálogo de vulnerabilidades (CVE, CVSS, referências) e findings por ativo/scan em **18 categorias**, com evidência e recomendação (RN008, enforçado no modelo); pipeline em duas fases por host garante que os adapters de vulnerabilidade sempre leiam o profile mais recente do próprio scan.
+- **Cobertura OWASP Top 10 (2021 + 2025)** — todo finding é classificado nas **duas edições** (`owasp_2021`/`owasp_2025`) e no CWE primário (RN024), a partir da fonte única [`apps/scans/owasp.py`](backend/apps/scans/owasp.py); filtros na API e **matriz de cobertura por scan** (`GET /api/scans/{id}/owasp-coverage/`) que responde, por categoria e edição, se foi *testada × encontrada × provada* — categorias não detectáveis remotamente (Insecure Design, Logging) são marcadas honestamente como *cobertura limitada*. Ver [`docs/owasp-coverage.md`](docs/owasp-coverage.md).
+- **Motor de exploração (prova de impacto sob RoE)** — sobre findings já detectados, o motor *executa* o exploit para **comprovar impacto real** e registrar a prova numa **`Evidence` imutável** (passos executados + artefato extraído + nível de impacto), ligada ao **`ExploitationPlaybook`** curado da classe (PoC manual + cadeia de escalação "até onde dá para ir"). Cobre SQLi, command injection, LFI, SSRF, SSTI, XSS, open redirect, forced browsing, IDOR e enumeração de usuário. Gated fail-closed (kill-switch dedicado + opt-in/manual + escopo por finding — RN022) e sob piso de não-dano central (RN021).
 - **Correlation Engine** — risk score (0–100) e priorização automática de ativos, agrupamento por criticidade e heatmap por categoria, computados sob demanda a partir dos findings (sem cache a invalidar — sempre atualizado). **Dedup & triagem**: achados marcados como corrigido/falso-positivo/risco aceito são excluídos do score, evitando que reexecuções do mesmo scan o inflem artificialmente.
 - **Reporting** — relatórios executivo (risco + top riscos + heatmap) e técnico (inventário + findings completos) em PDF profissional (`reportlab`: capa com identidade, gráficos de severidade/categoria, numeração de páginas, sumário narrativo e seção de referências CVE/NVD), CSV e JSON, gerados só a partir de scans concluídos (RN012); download autenticado e auditado (RN011); histórico imutável (RN003).
 - **Knowledge Base** — artigos por categoria (descrição, impacto, passo a passo de remediação, referências), correlacionados a findings por `category` sem FK, com fallback genérico; seed inicial com 6 artigos reais; único conteúdo do domínio editável (CRUD completo, não é histórico imutável); integrado ao relatório técnico.
@@ -88,7 +95,9 @@ A UI é construída sobre **shadcn/ui** (primitivos Radix) com tokens de cor em 
 | Frontend | React, TypeScript, Vite, TailwindCSS, shadcn/ui (Radix), lucide-react, sonner, recharts, React Query, Zustand, React Router |
 | Backend | Python 3.13+, Django, Django REST Framework, SimpleJWT, django-filter |
 | Assíncrono | Celery, Redis |
-| Scanners | socket (TCP/UDP), dnspython (DNS/subdomínios/AXFR), requests (HTTP fingerprint + NVD + web active testing), ssl + cryptography (TLS/certificado), ftplib (credenciais default) |
+| Scanners | socket (TCP/UDP), dnspython (DNS/subdomínios/AXFR), requests (HTTP fingerprint + NVD + web active testing), ssl + cryptography (TLS/certificado), ftplib (credenciais default), html.parser (crawler + SRI) |
+| Exploração | módulos `ExploitModule` pure-Python sob seam único com RoE (allowlist de método, denylist de payload, orçamento) — `apps/scans/exploit/` |
+| Taxonomia | OWASP Top 10 2021 + 2025 + CWE — fonte única `apps/scans/owasp.py` |
 | Relatórios | reportlab (PDF) |
 | Banco / busca | PostgreSQL, OpenSearch (futuro) |
 | Infra | Docker, Docker Compose |
@@ -188,13 +197,17 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 | DELETE | `/api/scans/{id}/` | Exclui scan em cascata (findings + relatórios; 409 se ativo — RN014) | admin |
 | GET | `/api/scans/{id}/findings/` | Findings do scan | Autenticado |
 | GET | `/api/scans/{id}/services/` | Serviços descobertos pelo scan | Autenticado |
+| GET | `/api/scans/{id}/owasp-coverage/` | Matriz de cobertura OWASP Top 10 (2021 + 2025) do scan | Autenticado |
+| POST | `/api/scans/{id}/exploit/` | Dispara a exploração (prova de impacto) — gated (RN022) | analyst, admin |
 | GET | `/api/assets/` | Inventário de ativos | Autenticado |
 | GET | `/api/assets/{id}/services/` | Serviços de um ativo | Autenticado |
 | GET | `/api/assets/{id}/technologies/` | Tecnologias identificadas (technology profile) | Autenticado |
 | GET | `/api/assets/{id}/dns-records/` | Registros DNS não-host descobertos (MX/NS/TXT/SOA/SRV) | Autenticado |
 | GET | `/api/vulnerabilities/` | Catálogo de vulnerabilidades (CVE/CVSS) | Autenticado |
-| GET | `/api/findings/` | Findings do ambiente (filtros: severity/asset/scan/category) | Autenticado |
+| GET | `/api/findings/` | Findings do ambiente (filtros: severity/asset/scan/category/owasp_2021/owasp_2025/cwe) | Autenticado |
 | POST | `/api/findings/{id}/triage/` | Triar um achado lógico (aberto/corrigido/falso-positivo/risco aceito) | analyst, admin |
+| GET | `/api/evidence/` | Provas de exploração (`Evidence` imutável — aba Evidências) | Autenticado |
+| GET/POST | `/api/playbooks/` | Playbooks curados de exploração (por classe de vulnerabilidade) | criar: analyst, admin |
 | GET | `/api/risk/overview/` | Risk score, ativos priorizados e heatmap (Correlation Engine) | Autenticado |
 | GET/POST | `/api/reports/` | Lista / gera relatórios (executivo/técnico, PDF/CSV/JSON) | criar: analyst, admin |
 | GET | `/api/reports/{id}/download/` | Baixa o artefato do relatório | Autenticado |
@@ -208,7 +221,7 @@ Base: `/api`. Autenticação: **Bearer JWT** (exceto health e login). Contrato c
 
 ## Testes & CI
 
-- **Backend:** pytest + pytest-django + factory-boy (Postgres efêmero). Regras de negócio testadas por ID de RN. **464 testes, cobertura ~89,70%** (gate 80%). Todo adapter mantém a lógica de decisão em módulos puros testáveis sem rede real, com um seam de rede fino monkeypatchável.
+- **Backend:** pytest + pytest-django + factory-boy (Postgres efêmero). Regras de negócio testadas por ID de RN. Baseline de **464 testes (~89,70%)** antes da onda OWASP, acrescida de novas suítes (taxonomia OWASP, detectores A01/A07/A08, módulos de prova) — gate de cobertura **80%** no CI. Todo adapter/detector mantém a lógica de decisão em módulos puros testáveis sem rede real, com um seam de rede fino monkeypatchável.
 - **Frontend:** Vitest + Testing Library (jsdom); `tsc -b` como checagem de tipos.
 - **CI:** GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda lint (ruff/black), testes com cobertura (gate ≥ 80%), build do frontend e SCA (`pip-audit` / `npm audit`). Ativa após `git init` + push.
 
@@ -223,11 +236,14 @@ backend/           # Django + DRF + Celery
   apps/core/       # BaseModel, AuditLog, permissions, health, logging
   apps/accounts/   # User (email + RBAC), auth JWT
   apps/assets/     # Asset, Service, Technology, DnsRecord (inventário + technology profile)
-  apps/scans/      # Target, Scan, Vulnerability, Finding, FindingTriage; 11 adapters (discovery/fingerprint/vulnerability);
+  apps/scans/      # Target, Scan, Vulnerability, Finding, FindingTriage, Evidence, ExploitationPlaybook; 11 adapters (discovery/fingerprint/vulnerability);
+                   # taxonomia OWASP (owasp.py) + matriz de cobertura (owasp_coverage.py);
                    # módulos puros: signatures, banners, cve, tls_analysis, dns_analysis, correlation (risk score + triagem),
-                   # profiles (perfis de intensidade), targets (expansão de alvo), web/ (crawler/passive/exposure/methods/injection),
-                   # data/ (ports/udp_probes/subdomains/web_paths/default_creds); services, tasks
-  apps/reports/    # Report, payload (executivo/técnico + narrativa/referências), rendering (dispatcher), pdf (PDF profissional), services
+                   # profiles (perfis de intensidade), targets (expansão de alvo),
+                   # web/ (crawler/passive/exposure/methods/injection/access_control/auth_checks/integrity),
+                   # exploit/ (motor de exploração: base+RoE, registry, runner, módulos sqli/cmdi/lfi/ssrf/ssti/web_simple/access/auth),
+                   # data/ (ports/udp_probes/subdomains/web_paths/default_creds/js_libraries); services, tasks
+  apps/reports/    # Report, payload (executivo/técnico + narrativa/referências/cobertura OWASP), rendering (dispatcher), pdf (PDF profissional), services
   apps/knowledge/  # KnowledgeArticle, services (correlação por categoria), seed de conteúdo
 frontend/          # React + TS + Vite; design system shadcn/ui em src/components/ui/
   src/components/  # ui/ (primitivos + kit Byakugan), targets/, scans/, findings/, reports/, charts/, brand/, layout/

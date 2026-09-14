@@ -49,3 +49,9 @@ docker compose run --rm frontend npm test
 - Testes de regra de negócio devem citar o ID da RN coberta (ex.: `test_rn002_prevents_duplicate_scan`).
 - Smoke test mínimo: `GET /api/health/` retorna `200`.
 - CI executa: lint (`ruff`/`black --check`, `eslint`) → testes → cobertura.
+
+## Cobertura OWASP (Fase B/C)
+
+- **Puros (sem banco/rede)**: `test_owasp.py` (taxonomia + matriz `compute_owasp_coverage`), `test_web_access_control.py`, `test_web_auth_checks.py`, `test_web_integrity.py`, `test_web_passive_owasp.py` (detectores novos), `test_exploit_owasp.py` (módulos de prova A01/A07 com fetch falso).
+- **Com banco/API**: `test_owasp_api.py` (enriquecimento OWASP em `persist_findings`, divergência SSRF entre edições, endpoint `owasp-coverage`, campos OWASP no `FindingSerializer`).
+- **Relatório**: `apps/reports/tests/test_owasp_report.py` (seção OWASP no payload e no PDF de ambos os tipos).

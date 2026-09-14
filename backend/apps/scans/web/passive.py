@@ -9,7 +9,10 @@ concatenar todos em uma string) vive em ``adapters.WebScanAdapter``.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+from .auth_checks import is_login_form
 
 #: Headers de segurança verificados: nome → (severidade se ausente, propósito).
 _SECURITY_HEADERS: dict[str, tuple[str, str]] = {
@@ -186,6 +189,103 @@ def analyze_cors(headers: dict[str, str], *, probe_origin: str) -> list[dict[str
         ]
 
     return []
+
+
+#: Recursos ``http://`` embutidos numa página (src/href absolutos inseguros).
+_HTTP_SUBRESOURCE_RE = re.compile(r"""(?:src|href)\s*=\s*['"]http://[^'"]+['"]""", re.IGNORECASE)
+
+#: Assinaturas fortes de página de erro/debug exposta (stack trace, debugger).
+_DEBUG_MARKERS: tuple[tuple[str, str], ...] = (
+    ("you're seeing this error because you have debug = true", "Django DEBUG=True"),
+    ("traceback (most recent call last)", "Traceback Python"),
+    ("werkzeug debugger", "Werkzeug interactive debugger"),
+    ("django version", "Django debug page"),
+    ("action controller: exception caught", "Rails exception"),
+    ("server error in '/' application", "ASP.NET stack trace"),
+    ("whoops, looks like something went wrong", "Laravel/Whoops debug page"),
+    ("<b>fatal error</b>", "PHP fatal error exposto"),
+    ("stack trace:", "Stack trace exposto"),
+)
+
+
+def analyze_mixed_content(url: str, body: str, *, is_https: bool) -> dict[str, Any] | None:
+    """Detecta conteúdo misto: página HTTPS que carrega sub-recursos por http:// (category ``tls``)."""
+    if not is_https:
+        return None
+    match = _HTTP_SUBRESOURCE_RE.search(body)
+    if not match:
+        return None
+    return _finding(
+        title="Conteúdo misto (mixed content) em página HTTPS",
+        severity="medium",
+        category="tls",
+        description=(
+            "A página é servida por HTTPS mas carrega sub-recursos via http:// "
+            "inseguro — o tráfego desses recursos pode ser interceptado/alterado "
+            "em trânsito, quebrando as garantias do HTTPS (falha criptográfica)."
+        ),
+        evidence=f"URL: {url} | Parâmetro: '' | Recurso inseguro: {match.group(0)[:120]}",
+        recommendation=(
+            "Servir todos os sub-recursos por HTTPS e adicionar "
+            "'Content-Security-Policy: upgrade-insecure-requests'."
+        ),
+        playbook_key="crypto.mixed-content",
+    )
+
+
+def analyze_login_over_http(
+    url: str, forms: list[dict[str, Any]], *, is_https: bool
+) -> dict[str, Any] | None:
+    """Detecta formulário de login servido/submetido sobre HTTP (category ``credential``)."""
+    if is_https:
+        return None
+    if not any(is_login_form(form) for form in forms):
+        return None
+    return _finding(
+        title="Formulário de login transmitido sobre HTTP (sem TLS)",
+        severity="high",
+        category="credential",
+        description=(
+            "Um formulário de autenticação (com campo de senha) é servido sobre "
+            "HTTP sem TLS — as credenciais trafegam em texto claro e podem ser "
+            "capturadas por qualquer intermediário da rede (falha criptográfica)."
+        ),
+        evidence=f"URL: {url} | Parâmetro: '' | Formulário com campo de senha em página HTTP.",
+        recommendation=(
+            "Servir toda a aplicação (especialmente login) por HTTPS, redirecionar "
+            "HTTP→HTTPS e enviar HSTS."
+        ),
+        playbook_key="crypto.cleartext-credentials",
+    )
+
+
+def analyze_debug_mode(url: str, status_code: int, body: str) -> dict[str, Any] | None:
+    """Detecta página de debug/stack trace exposta (category ``exposure``)."""
+    lowered = body.lower()
+    for marker, label in _DEBUG_MARKERS:
+        if marker in lowered:
+            return _finding(
+                title="Modo debug / stack trace exposto",
+                severity="high",
+                category="exposure",
+                description=(
+                    "A aplicação expõe uma página de erro detalhada/debug em "
+                    f"produção ({label}) — revela caminhos internos, versões, "
+                    "trechos de código e às vezes segredos, além de facilitar a "
+                    "exploração (má configuração de segurança)."
+                ),
+                evidence=(
+                    f"URL: {url} | Parâmetro: '' | HTTP {status_code}; marcador de "
+                    f"debug na resposta: '{label}'."
+                ),
+                recommendation=(
+                    "Desabilitar o modo debug em produção (ex.: DEBUG=False no "
+                    "Django), retornar páginas de erro genéricas e registrar o "
+                    "detalhe apenas no log interno."
+                ),
+                playbook_key="misconfig.debug-mode",
+            )
+    return None
 
 
 def analyze_directory_listing(url: str, body: str) -> dict[str, Any] | None:

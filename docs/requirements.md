@@ -33,6 +33,11 @@
 | RF027 | Exploração para prova de impacto | Executar o exploit sobre findings detectados para comprovar impacto real (ex.: extrair versão/tabelas do banco via SQLi, `id` via command injection, ler arquivos via LFI, alcançar metadata interna via SSRF), sob RoE de não-dano (RN021) | Motor de Exploração |
 | RF028 | Aba Evidências | Exibir, por vulnerabilidade, a prova de exploração automatizada (`Evidence`: passos executados + artefato extraído) e o guia curado de exploração (`ExploitationPlaybook`: PoC manual + cadeia de escalação "até onde dá para ir" + ferramentas + referências) | Motor de Exploração |
 | RF029 | Gatilho e gating de exploração | Disparar a exploração inline (opt-in por scan) ou manualmente sobre um scan concluído, atrás do kill-switch dedicado e da revalidação de escopo por finding (RN022), com cada evento auditado | Motor de Exploração |
+| RF030 | Classificação OWASP Top 10 | Classificar todo finding no OWASP Top 10 2021 **e** 2025 + CWE primário (RN024), consultável/filtrável na API | Cobertura OWASP |
+| RF031 | Detecção de Broken Access Control (A01) | Forced browsing a endpoints administrativos sem autenticação e IDOR heurístico em ids numéricos (não-destrutivo, GET) | Cobertura OWASP |
+| RF032 | Detecção de Auth Failures (A07) | Enumeração de usuário via mensagem de erro (idempotente) além das credenciais default; login sobre HTTP | Cobertura OWASP |
+| RF033 | Detecção de Integrity Failures (A08) | Subresource Integrity (SRI) ausente em recursos de terceiros e bibliotecas JS de front-end desatualizadas/vulneráveis | Cobertura OWASP |
+| RF034 | Matriz de cobertura OWASP | `GET /scans/{id}/owasp-coverage/` e seção nos relatórios: por categoria (2021/2025), testado × encontrado × provado, com "cobertura limitada" onde não detectável | Cobertura OWASP |
 
 ## Requisitos Não Funcionais (RNF)
 

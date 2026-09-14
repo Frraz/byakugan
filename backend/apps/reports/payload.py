@@ -15,8 +15,10 @@ from django.utils import timezone
 
 from apps.assets.models import Asset
 from apps.knowledge.services import find_article_for_category
+from apps.scans.adapters import get_adapters_for
 from apps.scans.correlation import compute_asset_risk, compute_heatmap, compute_risk
-from apps.scans.models import Finding, Scan
+from apps.scans.models import Evidence, Finding, FindingTriage, Scan
+from apps.scans.owasp_coverage import compute_owasp_coverage
 
 from .models import Report
 
@@ -69,6 +71,9 @@ def build_findings_section(scan: Scan) -> list[dict[str, Any]]:
             "severity": f.severity,
             "cvss": float(f.cvss) if f.cvss is not None else None,
             "cve": f.vulnerability.cve if f.vulnerability else None,
+            "cwe": f.cwe,
+            "owasp_2021": f.owasp_2021,
+            "owasp_2025": f.owasp_2025,
             "description": f.description,
             "evidence": f.evidence,
             "recommendation": f.recommendation,
@@ -150,6 +155,31 @@ def build_references(scan: Scan) -> list[dict[str, Any]]:
     return refs
 
 
+def build_owasp_coverage(scan: Scan) -> dict[str, Any]:
+    """Matriz de cobertura OWASP Top 10 (2021 + 2025) do scan para o relatório.
+
+    Reaproveita ``apps.scans.owasp_coverage.compute_owasp_coverage`` (mesma
+    fonte da API ``/scans/{id}/owasp-coverage/``), garantindo que relatório e
+    dashboard mostrem exatamente a mesma cobertura.
+    """
+    adapters_run = [a.name for a in get_adapters_for(scan.scan_type, scan.options)]
+    finding_rows = list(scan.findings.values("owasp_2021", "owasp_2025", "severity", "dedup_key"))
+    proven_playbook_keys = set(
+        scan.evidences.filter(status=Evidence.Status.PROVEN).values_list("playbook_key", flat=True)
+    )
+    excluded_dedup_keys = set(
+        FindingTriage.objects.filter(status__in=FindingTriage.RESOLVED_STATUSES).values_list(
+            "dedup_key", flat=True
+        )
+    )
+    return compute_owasp_coverage(
+        finding_rows=finding_rows,
+        adapters_run=adapters_run,
+        proven_playbook_keys=proven_playbook_keys,
+        excluded_dedup_keys=excluded_dedup_keys,
+    )
+
+
 def build_scan_metadata(scan: Scan) -> dict[str, Any]:
     """Metadados de execução do scan (relatório técnico)."""
     return {
@@ -214,6 +244,7 @@ def build_report_payload(scan: Scan, report_type: str) -> dict[str, Any]:
         "target": scan.target,
         "report_type": report_type,
         "summary": build_summary(scan),
+        "owasp_coverage": build_owasp_coverage(scan),
     }
 
     if report_type == Report.ReportType.EXECUTIVE:

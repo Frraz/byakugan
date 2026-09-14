@@ -57,10 +57,17 @@ Log estruturado (JSON) com campos: `timestamp`, `user`, `action`, `severity`, `s
 - Verificação de vulnerabilidades e atualizações regulares (Dependabot/`pip-audit`/`npm audit`).
 
 ## Conformidade / referências
-OWASP Top 10 · OWASP ASVS · NIST CSF · CIS Controls.
+OWASP Top 10 (**2021 e 2025**) · OWASP ASVS · NIST CSF · CIS Controls · CWE.
+
+O mapeamento **real** dos findings ao OWASP Top 10 das duas edições (e ao CWE), com a matriz de cobertura por scan, está em `docs/owasp-coverage.md` — não é apenas uma referência aspiracional: cada `Finding` carrega `owasp_2021`/`owasp_2025`/`cwe` (RN024).
 
 ## Kill-switch de varredura (protótipo)
 Por ser um protótipo de uso restrito (nunca público; apenas empresas de cybersecurity com autorização documentada), a execução real de varredura é gated pela env **`BYAKUGAN_SCANNING_ENABLED`** (default **desligado**). Com o switch desligado, scans são registrados mas não executam varredura real — falham de forma controlada e auditada. Combinado com o enforcement de escopo (RN007), evita varredura acidental ou fora de laboratório autorizado.
+
+## Kill-switch e RoE de exploração
+A exploração (prova de impacto) é a operação mais invasiva e tem um **kill-switch dedicado e independente**, **`BYAKUGAN_EXPLOITATION_ENABLED`** (default **desligado**). O gating é **fail-closed em quatro camadas** (RN022): (1) kill-switch ligado, (2) opt-in por scan (`options.exploit` + `intensity=aggressive`) **ou** gatilho manual `POST /scans/{id}/exploit/` (analyst/admin), (3) revalidação do escopo **por finding** (RN007), (4) tudo auditado (`exploit.attempted`/`proven`/`blocked`/`failed`).
+
+O **piso de não-dano** (RN021) é aplicado **centralmente** no único seam de rede do motor (`apps/scans/exploit/base.py`), antes de qualquer I/O: método fora da allowlist (só GET/POST/HEAD/OPTIONS), payload com token destrutivo (denylist checada **após** decodificar a URL, para o encoding não contornar) ou orçamento de requisições por finding excedido são recusados. Nunca destrói/altera dados, causa DoS, cria persistência ou exfiltra em massa (amostra limitada). A prova é gravada como `Evidence` **imutável** (RN023). Ver `docs/exploitation-engine.md`.
 
 ## Uso ético (ver também CLAUDE.md §2)
 O Byakugan só opera contra alvos autorizados. A plataforma registra a autorização de cada scan e não implementa recursos cujo propósito primário seja uso ofensivo não autorizado ou evasão maliciosa.
