@@ -71,6 +71,7 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Lint (ruff)
         run: ruff check apps config
@@ -80,8 +81,10 @@ jobs:
         run: python manage.py check
       - name: Migration drift check
         run: python manage.py makemigrations --check --dry-run
+      # Gate de cobertura alinhado ao RNF005 (> 80%) — mesma meta citada em
+      # README.md e docs/testing.md (antes o CI exigia 85%, divergente da doc).
       - name: Tests (pytest + coverage)
-        run: pytest --cov=apps --cov-report=term-missing --cov-fail-under=85
+        run: pytest --cov=apps --cov-report=term-missing --cov-fail-under=80
 
   frontend:
     name: Frontend (build + tests)
