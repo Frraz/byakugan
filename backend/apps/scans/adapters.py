@@ -168,6 +168,29 @@ def _address_family(ip: str) -> int:
     return socket.AF_INET6 if ipaddress.ip_address(ip).version == 6 else socket.AF_INET
 
 
+def _asset_for_target(target: str):
+    """Localiza o ativo do alvo pela chave natural (ip/hostname/domínio).
+
+    Filtrar o campo ``inet`` (``Asset.ip``) com um hostname faz o psycopg3
+    tentar ``ipaddress.ip_address(target)`` e levantar ``ValueError`` ("does
+    not appear to be an IPv4 or IPv6 address"). Por isso só incluímos
+    ``Q(ip=target)`` quando o alvo é, de fato, um IP literal — casos com
+    hostname/domínio casam apenas por esses campos.
+    """
+    from django.db.models import Q
+
+    from apps.assets.models import Asset
+
+    lookup = Q(hostname=target) | Q(domain=target)
+    try:
+        ipaddress.ip_address(target)
+    except ValueError:
+        pass
+    else:
+        lookup |= Q(ip=target)
+    return Asset.objects.filter(lookup).first()
+
+
 def _url_host(host: str) -> str:
     """Formata um host para uso em URL — IPv6 literal precisa de colchetes (RFC 3986).
 
@@ -1088,14 +1111,10 @@ class CveLookupAdapter(ScannerAdapter):
 
     def run(self, target: str, context: ScanContext) -> list[RawResult]:
         """Correlaciona o technology profile do ativo com CVEs da NVD."""
-        from django.db.models import Q
-
-        from apps.assets.models import Asset
-
         from .cve import build_cpe_match, map_cve_item
 
         context.check_cancelled()
-        asset = Asset.objects.filter(Q(ip=target) | Q(hostname=target) | Q(domain=target)).first()
+        asset = _asset_for_target(target)
         if asset is None:
             return []
 
@@ -1292,10 +1311,6 @@ class DefaultCredsAdapter(ScannerAdapter):
 
     def run(self, target: str, context: ScanContext) -> list[RawResult]:
         """Testa credenciais default nas portas já descobertas abertas do alvo."""
-        from django.db.models import Q
-
-        from apps.assets.models import Asset
-
         from .authorization import is_target_in_scope
 
         context.check_cancelled()
@@ -1304,7 +1319,7 @@ class DefaultCredsAdapter(ScannerAdapter):
         if not is_target_in_scope(target, context.authorization_scope):
             return []  # defesa extra: nunca testa credenciais fora do escopo
 
-        asset = Asset.objects.filter(Q(ip=target) | Q(hostname=target) | Q(domain=target)).first()
+        asset = _asset_for_target(target)
         if asset is None:
             return []
 
