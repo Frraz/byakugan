@@ -38,12 +38,7 @@ export function DashboardPage() {
 
       {/* KPIs principais */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          label="Ativos"
-          value={assets.data?.count ?? "—"}
-          icon={Boxes}
-          onClick={() => navigate("/assets")}
-        />
+        <StatCard label="Ativos descobertos" value={assets.data?.count ?? "—"} icon={Boxes} />
         <StatCard
           label="Alvos"
           value={targets.data?.count ?? "—"}

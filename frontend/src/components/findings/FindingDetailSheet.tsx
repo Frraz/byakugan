@@ -292,12 +292,6 @@ export function FindingDetailSheet({
                       ))}
                     </ol>
                   )}
-                  <Link
-                    to={`/knowledge?category=${encodeURIComponent(finding.category)}`}
-                    className="inline-block pt-1 text-xs text-primary hover:underline"
-                  >
-                    Ver na Knowledge Base →
-                  </Link>
                 </div>
               </Section>
             )}

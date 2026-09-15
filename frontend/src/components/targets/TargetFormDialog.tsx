@@ -1,6 +1,7 @@
-/** Diálogo de criação/edição de Target (RF004, RN001/RN007). */
+/** Diálogo de criação/edição de Target (RF004). Sistema privado: só nome + valor. */
 
 import { type FormEvent, useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,11 @@ import {
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useCreateTarget, useUpdateTarget, type TargetInput } from "@/hooks/useData";
 import { errorMessage, fieldErrors } from "@/lib/errors";
 import type { Target } from "@/lib/types";
@@ -22,7 +28,6 @@ import type { Target } from "@/lib/types";
 const EMPTY: TargetInput = {
   name: "",
   value: "",
-  authorized_by: "",
   authorization_scope: "",
   authorization_expires_at: "",
   is_active: true,
@@ -35,6 +40,32 @@ function toLocalInput(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Ícone (i) com explicação do que é o escopo autorizado e como usar. */
+function ScopeInfo() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="O que é o escopo autorizado?"
+          className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground hover:text-foreground"
+        >
+          <Info className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-left">
+        <p className="text-xs leading-relaxed">
+          Delimita <strong>exatamente</strong> o que o Byakugan pode tocar. Todo host testado —
+          inclusive os expandidos de um CIDR — é revalidado contra este escopo antes de cada
+          probe e de cada tentativa de exploração (fail-closed). Deixe vazio para usar o próprio
+          valor do alvo como escopo. Ex.: <code>192.168.10.0/24</code> ou{" "}
+          <code>byakugan.com.br</code>.
+        </p>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function TargetFormDialog({
@@ -60,7 +91,6 @@ export function TargetFormDialog({
         ? {
             name: target.name,
             value: target.value,
-            authorized_by: target.authorized_by,
             authorization_scope: target.authorization_scope,
             authorization_expires_at: toLocalInput(target.authorization_expires_at),
             is_active: target.is_active,
@@ -76,11 +106,17 @@ export function TargetFormDialog({
     e.preventDefault();
     setErrors({});
     const payload: TargetInput = {
-      ...form,
+      name: form.name,
+      value: form.value,
+      is_active: form.is_active,
       authorization_expires_at: form.authorization_expires_at
         ? new Date(form.authorization_expires_at).toISOString()
         : null,
     };
+    // Só envia o escopo se preenchido — vazio deixa o backend usar o próprio alvo.
+    if (form.authorization_scope?.trim()) {
+      payload.authorization_scope = form.authorization_scope.trim();
+    }
 
     const onError = (err: unknown) => {
       setErrors(fieldErrors(err));
@@ -104,7 +140,8 @@ export function TargetFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar alvo" : "Novo alvo"}</DialogTitle>
           <DialogDescription>
-            Toda varredura exige autorização documentada (RN007). O tipo é derivado do valor.
+            Aceita host, domínio (ex.: byakugan.com.br), IPv4, IPv6 ou CIDR. O tipo é derivado
+            automaticamente do valor.
           </DialogDescription>
         </DialogHeader>
 
@@ -129,33 +166,22 @@ export function TargetFormDialog({
               className="font-mono"
               value={form.value}
               onChange={(e) => set("value")(e.target.value)}
-              placeholder="192.168.10.0/24"
+              placeholder="byakugan.com.br, 10.0.0.0/24 ou 2001:db8::1"
             />
             {errors.value && <p className="text-xs text-destructive">{errors.value}</p>}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="t-auth">Autorizado por</Label>
-            <Input
-              id="t-auth"
-              required
-              value={form.authorized_by}
-              onChange={(e) => set("authorized_by")(e.target.value)}
-              placeholder="João Silva (CISO)"
-            />
-            {errors.authorized_by && (
-              <p className="text-xs text-destructive">{errors.authorized_by}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="t-scope">Escopo autorizado</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="t-scope">Escopo autorizado (opcional)</Label>
+              <ScopeInfo />
+            </div>
             <Input
               id="t-scope"
-              required
-              value={form.authorization_scope}
+              className="font-mono"
+              value={form.authorization_scope ?? ""}
               onChange={(e) => set("authorization_scope")(e.target.value)}
-              placeholder="192.168.10.0/24"
+              placeholder="Vazio = usa o próprio alvo"
             />
             {errors.authorization_scope && (
               <p className="text-xs text-destructive">{errors.authorization_scope}</p>

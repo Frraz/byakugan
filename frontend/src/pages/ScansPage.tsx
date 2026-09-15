@@ -105,8 +105,17 @@ export function ScansPage() {
   };
 
   const onExploit = (s: Scan) => {
+    if (s.exploitable_findings_count === 0) {
+      toast.warning(
+        "Nenhum finding deste scan é explorável automaticamente. Veja os playbooks manuais em Evidências.",
+      );
+      return;
+    }
     exploit.mutate(s.id, {
-      onSuccess: () => toast.success("Exploração enfileirada — acompanhe em Evidências."),
+      onSuccess: () =>
+        toast.success(
+          `Exploração enfileirada (${s.exploitable_findings_count} explorável(is)) — acompanhe em Evidências.`,
+        ),
       onError: (err) => toast.error(errorMessage(err)),
     });
   };

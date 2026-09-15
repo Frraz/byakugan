@@ -67,8 +67,12 @@ class Target(BaseModel):
     name = models.CharField(max_length=255)
     value = models.CharField(max_length=255)
     kind = models.CharField(max_length=10, choices=Kind.choices)
-    authorized_by = models.CharField(max_length=255)
-    authorization_scope = models.TextField()
+    # Deployment privado: a autorização deixa de ser entrada obrigatória do
+    # usuário. ``authorized_by`` é auto-preenchido (usuário logado) e
+    # ``authorization_scope`` cai para o próprio ``value`` quando vazio — o
+    # escopo fail-closed (RN007) continua valendo, só com um default sensato.
+    authorized_by = models.CharField(max_length=255, blank=True, default="")
+    authorization_scope = models.TextField(blank=True, default="")
     authorization_expires_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(

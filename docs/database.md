@@ -45,8 +45,8 @@ Alvo cadastrado com autorização reutilizável. Centraliza o registro de autori
 | name | string | rótulo amigável (ex.: "DMZ empresa X") |
 | value | string | host, domínio, IP ou CIDR |
 | kind | enum | `host` \| `domain` \| `ip` \| `cidr` (derivado da validação RN001) |
-| authorized_by | string | quem autorizou (nome/papel) |
-| authorization_scope | text | escopo permitido (domínios, IPs, sub-redes) |
+| authorized_by | string | quem autorizou — **opcional** (`blank`); deployment privado auto-preenche com o e-mail do usuário autenticado |
+| authorization_scope | text | escopo permitido (domínios, IPs, sub-redes) — **opcional** (`blank`); vazio assume o próprio `value` |
 | authorization_expires_at | datetime | validade da autorização (nullable) |
 | is_active | bool | alvo ativo para novos scans |
 | created_by | FK → users | quem cadastrou |
@@ -280,5 +280,5 @@ Trilha de auditoria imutável.
 - **Imutabilidade**: registros de `scans`, `findings` e `reports` não são atualizados após conclusão nem apagados (exceto por admin, conforme RN006/RN014).
 - **Semântica de deleção de scan**: no schema, `findings.scan` e `reports.scan` usam `PROTECT` (rede de segurança contra deleções acidentais). A exclusão administrativa de um scan (RN014) é feita **em cascata pelo service** (`apps.scans.services.delete_scan`), dentro de uma transação, removendo findings, relatórios e artefatos em disco — nunca por CASCADE de banco.
 - **Findings sempre com contexto**: `description`, `evidence` e `recommendation` são obrigatórios.
-- **Autorização**: `scans.authorized_by` obrigatório antes da execução.
+- **Autorização (RN007)**: `targets`/`scans` sempre **carregam** `authorized_by` + `authorization_scope`, e o alvo é revalidado contra o escopo (fail-closed) antes de cada probe. Em deployment privado esses campos são **opcionais na entrada** (`blank`, migração `scans/0010_target_authorization_optional`) e auto-preenchidos pelo serializer/`create_scan` (usuário autenticado; o próprio alvo como escopo).
 - **Classificação OWASP (RN024)**: `findings.owasp_2021` e `findings.owasp_2025` (`CharField(4)`, ex.: `"A03"`, indexados) + `findings.cwe` (`CharField(16)`, ex.: `"CWE-89"`) — derivados de `playbook_key`/`category` pela fonte única `apps/scans/owasp.py` em `parsers.persist_findings`; vazios em linhas antigas/sem mapeamento (retrocompatível). A migration `0007_finding_owasp_classification` adiciona os campos e faz backfill das linhas existentes. Novas categorias de finding: `access-control`, `auth`, `integrity` (Fase B). Ver `docs/owasp-coverage.md`.

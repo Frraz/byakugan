@@ -7,7 +7,7 @@
 | RF001 | Login | Autenticação de usuário com emissão de tokens JWT | Fundação |
 | RF002 | Cadastro de usuários | Criação de contas (por admin) | Fundação |
 | RF003 | RBAC | Controle de acesso por papéis (Administrator, Security Analyst, Viewer) | Fundação |
-| RF004 | Criar scan | Registrar um scan com alvo(s) e confirmação de autorização | Asset Discovery |
+| RF004 | Criar scan | Registrar um scan com alvo(s); a autorização (`authorized_by` + escopo) é registrada — opcional na entrada em deployment privado, auto-preenchida e sempre validada contra o escopo (RN007) | Asset Discovery |
 | RF005 | Executar scan | Enfileirar e processar o scan de forma assíncrona | Asset Discovery |
 | RF006 | Consultar scans | Listar/detalhar scans e seus estados | Asset Discovery |
 | RF007 | Consultar ativos | Listar hosts, portas, protocolos e serviços descobertos | Asset Discovery |
@@ -38,6 +38,7 @@
 | RF032 | Detecção de Auth Failures (A07) | Enumeração de usuário via mensagem de erro (idempotente) além das credenciais default; login sobre HTTP | Cobertura OWASP |
 | RF033 | Detecção de Integrity Failures (A08) | Subresource Integrity (SRI) ausente em recursos de terceiros e bibliotecas JS de front-end desatualizadas/vulneráveis | Cobertura OWASP |
 | RF034 | Matriz de cobertura OWASP | `GET /scans/{id}/owasp-coverage/` e seção nos relatórios: por categoria (2021/2025), testado × encontrado × provado, com "cobertura limitada" onde não detectável | Cobertura OWASP |
+| RF035 | Vulnerabilidades consolidadas | Agrupar a mesma vulnerabilidade lógica entre alvos numa única linha (`GET /findings/grouped/`, RN025), com contagem de alvos afetados e um detalhe que separa como foi detectada, como explorá-la e onde foi encontrada | UX/Consolidação |
 
 ## Requisitos Não Funcionais (RNF)
 
@@ -52,7 +53,7 @@
 | RNF007 | Auditoria | Trilha de auditoria completa e imutável de eventos sensíveis |
 | RNF008 | Segurança de transporte | HTTPS obrigatório em produção (TLS 1.2+) |
 | RNF009 | Escalabilidade | Workers escaláveis horizontalmente; meta de até 100 ativos simultâneos |
-| RNF010 | Autorização de alvos | Nenhum scan executa sem registro de autorização |
+| RNF010 | Autorização de alvos | Todo scan carrega registro de autorização e é validado contra o escopo (fail-closed); em deployment privado o registro é auto-preenchido, nunca ausente |
 
 ## Rastreabilidade
 

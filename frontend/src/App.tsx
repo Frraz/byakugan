@@ -5,10 +5,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/layout/AppLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AssetDetailPage } from "./pages/AssetDetailPage";
-import { AssetsPage } from "./pages/AssetsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EvidencePage } from "./pages/EvidencePage";
-import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ScanDetailPage } from "./pages/ScanDetailPage";
@@ -26,12 +24,12 @@ export default function App() {
           <Route path="targets" element={<TargetsPage />} />
           <Route path="scans" element={<ScansPage />} />
           <Route path="scans/:id" element={<ScanDetailPage />} />
-          <Route path="assets" element={<AssetsPage />} />
+          {/* Assets deixou de ter aba própria; o detalhe do ativo continua
+              acessível via drill-down do detalhe da vulnerabilidade. */}
           <Route path="assets/:id" element={<AssetDetailPage />} />
           <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
           <Route path="evidence" element={<EvidencePage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="knowledge" element={<KnowledgeBasePage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

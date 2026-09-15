@@ -9,7 +9,7 @@ import ipaddress
 from dataclasses import asdict
 
 from django.conf import settings
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models import Case, Count, IntegerField, Max, OuterRef, Q, Subquery, Value, When
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -56,6 +56,17 @@ from .tasks import exploit_scan, run_scan
 from .validators import InvalidTarget
 
 DEFAULT_TOP_ASSETS_LIMIT = 10
+
+#: Ordena severidades (choices de texto não têm ordem no banco) para calcular a
+#: severidade máxima de um grupo de findings via agregação.
+SEVERITY_RANK = {
+    Severity.CRITICAL: 5,
+    Severity.HIGH: 4,
+    Severity.MEDIUM: 3,
+    Severity.LOW: 2,
+    Severity.INFO: 1,
+}
+_RANK_TO_SEVERITY = {v: k for k, v in SEVERITY_RANK.items()}
 
 
 class TargetViewSet(viewsets.ModelViewSet):
@@ -402,6 +413,130 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
         if self.action == "triage":
             return [IsAnalystOrAdmin()]
         return [ReadOnlyOrAnalyst()]
+
+    @action(detail=False, methods=["get"])
+    def grouped(self, request: Request) -> Response:
+        """Findings consolidados por vulnerabilidade lógica (entre alvos).
+
+        O ``dedup_key`` inclui ``asset_id`` (por-ativo), então não serve para
+        deduplicar a mesma falha em alvos diferentes. Aqui a assinatura é
+        ``(category, title)`` — estável entre alvos (o mesmo detector emite o
+        mesmo título; um título com CVE/versão embutidos naturalmente vira um
+        grupo distinto, o que é o comportamento correto).
+
+        Cada grupo agrega: severidade máxima, CVSS máx, contagem de alvos
+        afetados distintos, total de ocorrências, mapeamento OWASP/CWE, CVE e a
+        lista das ocorrências (ativo + scan + triagem) para o painel de detalhe.
+        Filtros: ``search`` (título/categoria/CVE), ``severity``, ``category``.
+        """
+        severity_case = Case(
+            *[When(severity=sev, then=Value(rank)) for sev, rank in SEVERITY_RANK.items()],
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+        # Base limpa (sem a annotation/ordenação de get_queryset) para a
+        # agregação — o order_by final é só por agregados, evitando que campos
+        # não-agregados vazem para o GROUP BY.
+        base = self.filter_queryset(Finding.objects.all())
+
+        groups = list(
+            base.values("category", "title")
+            .annotate(
+                occurrences=Count("id"),
+                targets=Count("asset_id", distinct=True),
+                cvss_max=Max("cvss"),
+                last_seen=Max("created_at"),
+                severity_rank=Max(severity_case),
+            )
+            .order_by("-severity_rank", "-last_seen")
+        )
+
+        page = self.paginate_queryset(groups)
+        page_groups = page if page is not None else groups
+
+        pairs = {(g["category"], g["title"]) for g in page_groups}
+        pair_filter = Q()
+        for category, title in pairs:
+            pair_filter |= Q(category=category, title=title)
+
+        occurrences_by_pair: dict[tuple[str, str], list[Finding]] = {}
+        representative: dict[tuple[str, str], Finding] = {}
+        if pair_filter:
+            for finding in (
+                self.get_queryset().filter(pair_filter).order_by("-created_at")
+            ):
+                key = (finding.category, finding.title)
+                occurrences_by_pair.setdefault(key, []).append(finding)
+
+        def occurrence_dict(finding: Finding) -> dict:
+            asset = finding.asset
+            scan = finding.scan
+            return {
+                "id": finding.id,
+                "severity": finding.severity,
+                "cvss": finding.cvss,
+                "triage_status": getattr(finding, "triage_status", None)
+                or FindingTriage.Status.OPEN,
+                "created_at": finding.created_at,
+                "asset": {
+                    "id": asset.id if asset else None,
+                    "hostname": asset.hostname if asset else "",
+                    "ip": asset.ip if asset else None,
+                    "domain": asset.domain if asset else "",
+                }
+                if asset
+                else None,
+                "scan": {
+                    "id": scan.id,
+                    "target": scan.target,
+                    "scan_type": scan.scan_type,
+                    "created_at": scan.created_at,
+                }
+                if scan
+                else None,
+            }
+
+        results = []
+        for group in page_groups:
+            key = (group["category"], group["title"])
+            occ = occurrences_by_pair.get(key, [])
+            rep = occ[0] if occ else None
+            open_count = sum(
+                1
+                for f in occ
+                if (getattr(f, "triage_status", None) or FindingTriage.Status.OPEN)
+                == FindingTriage.Status.OPEN
+            )
+            results.append(
+                {
+                    "group_key": key[1],  # título é a identidade legível do grupo
+                    "category": group["category"],
+                    "title": group["title"],
+                    "severity": _RANK_TO_SEVERITY.get(group["severity_rank"], Severity.INFO),
+                    "cvss": group["cvss_max"],
+                    "targets": group["targets"],
+                    "occurrences": group["occurrences"],
+                    "open_count": open_count,
+                    "triage_status": (
+                        FindingTriage.Status.OPEN if open_count else "resolved"
+                    ),
+                    "last_seen": group["last_seen"],
+                    "finding_id": rep.id if rep else None,
+                    "playbook_key": rep.playbook_key if rep else "",
+                    "owasp_2021": rep.owasp_2021 if rep else "",
+                    "owasp_2025": rep.owasp_2025 if rep else "",
+                    "cwe": rep.cwe if rep else "",
+                    "description": rep.description if rep else "",
+                    "evidence": rep.evidence if rep else "",
+                    "recommendation": rep.recommendation if rep else "",
+                    "cve": (rep.vulnerability.cve if rep and rep.vulnerability else None),
+                    "affected": [occurrence_dict(f) for f in occ],
+                }
+            )
+
+        if page is not None:
+            return self.get_paginated_response(results)
+        return Response(results)
 
     @action(detail=True, methods=["post"])
     def triage(self, request: Request, pk: str | None = None) -> Response:

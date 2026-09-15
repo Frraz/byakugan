@@ -10,7 +10,7 @@
 | RN004 | Toda vulnerabilidade/finding com CVE associado deve possuir classificação de severidade e, quando disponível, CVSS. |
 | RN005 | Todo relatório deve manter rastreabilidade com o scan que o originou. |
 | RN006 | Apenas administradores podem excluir registros; exclusões são auditadas. |
-| RN007 | Nenhum scan pode ser executado sem registro de autorização (`authorized_by` + escopo). Uso não autorizado é proibido. |
+| RN007 | Todo scan carrega registro de autorização (`authorized_by` + `authorization_scope`) e o alvo é revalidado contra o escopo (**fail-closed**) antes de cada probe. Em **deployment privado**, esses campos são **opcionais na entrada** e auto-preenchidos pelo backend (`authorized_by` = usuário autenticado; `authorization_scope` = o próprio valor do alvo quando vazio) — a revalidação de escopo continua valendo integralmente. Uso não autorizado é proibido. |
 | RN008 | Nenhum finding pode ser salvo sem `description`, `evidence` e `recommendation` (finding sem contexto é inválido). |
 | RN009 | A IA nunca executa ações que alterem sistemas; apenas analisa, explica, resume e recomenda. A decisão final é do usuário. |
 | RN010 | Estados de scan seguem a máquina: `pending → running → (completed | failed | cancelled)`. Transições inválidas são rejeitadas. |
@@ -28,6 +28,7 @@
 | RN022 | **Exploração é gated fail-closed**: só executa com o kill-switch dedicado `BYAKUGAN_EXPLOITATION_ENABLED` ligado **e** (opt-in por scan `options.exploit=True` + `intensity=aggressive`, **ou** gatilho manual `POST /scans/{id}/exploit/` por analyst/admin) **e** com o alvo do ativo revalidado contra o `authorization_scope` **antes de cada tentativa** (RN007). Fora do escopo → `Evidence` `blocked` + auditoria. Todo evento de exploração é auditado (`exploit.attempted`/`proven`/`blocked`/`failed`). |
 | RN023 | `Evidence` (o resultado de uma tentativa de exploração) é **imutável** (mesma garantia da RN003): cada tentativa cria um novo registro, nunca reescreve o histórico. `ExploitationPlaybook` (guia curado de exploração) é conteúdo **vivo/editável** — RN003 não se aplica, igual à Knowledge Base (RN013). |
 | RN024 | **Todo `Finding` é classificado no OWASP Top 10 das duas edições (2021 e 2025) e no CWE primário**, derivados da sua `playbook_key`/`category` pela fonte única `apps/scans/owasp.py` (`resolve_owasp`), preenchidos centralmente em `parsers.persist_findings` — nenhum detector define OWASP diretamente. Classes sem mapeamento ficam com campos vazios (retrocompatível). Categorias não detectáveis remotamente (Insecure Design, Logging, Mishandling) são reportadas na matriz de cobertura como **cobertura limitada**, nunca como falso "coberto". Ver `docs/owasp-coverage.md`. |
+| RN025 | A **visão consolidada de vulnerabilidades** (`GET /api/findings/grouped/`) agrupa `Finding`s pela **assinatura cross-target** `(category, título normalizado)` — distinta do `dedup_key` (que inclui `asset_id` e é **por-ativo**) — para que a mesma vulnerabilidade encontrada em vários alvos apareça **uma única vez**, com a contagem de alvos/ativos afetados distintos, o total de ocorrências e a lista de onde foi encontrada. É uma **agregação de leitura**: não cria nem altera `Finding`s (RN003 preservada). A severidade/CVSS do grupo é o máximo entre as ocorrências. |
 
 ## Papéis (RBAC)
 
@@ -35,4 +36,6 @@
 | --- | --- |
 | `admin` | Acesso total, incluindo gestão de usuários e exclusão de registros. |
 | `analyst` | Criar/cancelar scans, consultar resultados, gerar relatórios. |
-| `viewer` | Somente leitura (assets, scans, findings, reports, knowledge base). |
+| `viewer` | Somente leitura (assets, scans, findings, reports). |
+
+> **Deployment privado (frontend):** por ser um sistema de uso próprio, o frontend concede as ações de escrita a **qualquer usuário autenticado** (`usePermissions`) — evitando que botões primários "sumam" quando o papel não resolve. O **backend continua sendo a fonte real de permissão** (as *permission classes* do DRF acima permanecem inalteradas).

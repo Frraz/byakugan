@@ -1,10 +1,10 @@
-/** Vulnerabilities — explorer de findings + catálogo de CVEs (RF008). */
+/** Vulnerabilities — vulnerabilidades consolidadas + catálogo de CVEs (RF008). */
 
 import { useMemo, useState } from "react";
-import { ExternalLink, Search, ShieldAlert } from "lucide-react";
+import { Boxes, ExternalLink, Search, ShieldAlert } from "lucide-react";
 
 import { PageHeader } from "@/components/PageHeader";
-import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
+import { VulnerabilityGroupSheet } from "@/components/findings/VulnerabilityGroupSheet";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { DataPagination } from "@/components/ui/data-pagination";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -16,12 +16,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { useFindings, useRiskOverview, useVulnerabilities } from "@/hooks/useData";
+import { useGroupedFindings, useRiskOverview, useVulnerabilities } from "@/hooks/useData";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { errorMessage } from "@/lib/errors";
-import { formatRelative } from "@/lib/format";
-import type { Finding, Severity } from "@/lib/types";
+import type { GroupedFinding, Severity } from "@/lib/types";
 
 const SEVERITY_ACCENT: Record<Severity, "danger" | "warning" | "primary" | "muted"> = {
   critical: "danger",
@@ -31,18 +30,12 @@ const SEVERITY_ACCENT: Record<Severity, "danger" | "warning" | "primary" | "mute
   info: "muted",
 };
 
-function assetLabel(finding: Finding): string {
-  const a = finding.asset;
-  if (!a) return "—";
-  return a.hostname || a.ip || a.domain || a.id.slice(0, 8);
-}
-
 function FindingsTab() {
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState<Severity | "all">("all");
   const [page, setPage] = useState(1);
   const debounced = useDebounce(search);
-  const [selected, setSelected] = useState<Finding | null>(null);
+  const [selected, setSelected] = useState<GroupedFinding | null>(null);
 
   const overview = useRiskOverview();
   const counts = overview.data?.summary.severity;
@@ -55,7 +48,7 @@ function FindingsTab() {
     }),
     [debounced, severity, page],
   );
-  const { data, isLoading, isError, error } = useFindings(params);
+  const { data, isLoading, isError, error } = useGroupedFindings(params);
   const results = data?.results ?? [];
 
   return (
@@ -131,8 +124,8 @@ function FindingsTab() {
       ) : results.length === 0 ? (
         <EmptyState
           icon={ShieldAlert}
-          title="Nenhum finding encontrado"
-          hint="Execute um scan de vulnerability (ou full) sobre um alvo mapeado para correlacionar CVEs conhecidos."
+          title="Nenhuma vulnerabilidade encontrada"
+          hint="Execute um scan de vulnerability (ou full) sobre um alvo mapeado para correlacionar CVEs e testar falhas ativas."
         />
       ) : (
         <>
@@ -140,31 +133,42 @@ function FindingsTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Finding</TableHead>
+                  <TableHead>Vulnerabilidade</TableHead>
                   <TableHead>Severidade</TableHead>
-                  <TableHead>CVSS</TableHead>
-                  <TableHead>CVE</TableHead>
-                  <TableHead>Ativo</TableHead>
-                  <TableHead>Detectado</TableHead>
+                  <TableHead>Alvos afetados</TableHead>
+                  <TableHead>Ocorrências</TableHead>
+                  <TableHead>CVE / CWE</TableHead>
+                  <TableHead>OWASP</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {results.map((f) => (
-                  <TableRow key={f.id} className="cursor-pointer" onClick={() => setSelected(f)}>
+                {results.map((g) => (
+                  <TableRow
+                    key={`${g.category}:${g.title}`}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(g)}
+                  >
                     <TableCell className="max-w-md">
-                      <p className="font-medium text-foreground">{f.title}</p>
-                      <CategoryBadge category={f.category} className="mt-1" />
+                      <p className="font-medium text-foreground">{g.title}</p>
+                      <CategoryBadge category={g.category} className="mt-1" />
                     </TableCell>
                     <TableCell>
-                      <SeverityBadge severity={f.severity} />
+                      <SeverityBadge severity={g.severity} />
                     </TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{f.cvss ?? "—"}</TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                        <Boxes className="h-3.5 w-3.5" />
+                        {g.targets} {g.targets === 1 ? "alvo" : "alvos"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-mono text-sm text-muted-foreground">
+                      {g.occurrences}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-primary">
-                      {f.vulnerability?.cve ?? "—"}
+                      {g.cve ?? g.cwe ?? "—"}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{assetLabel(f)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatRelative(f.created_at)}
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {g.owasp_2025 || g.owasp_2021 || "—"}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -175,7 +179,7 @@ function FindingsTab() {
         </>
       )}
 
-      <FindingDetailSheet finding={selected} onOpenChange={(open) => !open && setSelected(null)} />
+      <VulnerabilityGroupSheet group={selected} onOpenChange={(open) => !open && setSelected(null)} />
     </div>
   );
 }
@@ -272,7 +276,7 @@ export function VulnerabilitiesPage() {
     <div>
       <PageHeader
         title="Vulnerabilidades"
-        description="Findings do ambiente e catálogo de CVEs correlacionados (base NVD)."
+        description="Cada vulnerabilidade lógica em uma linha — clique para ver como foi detectada, como explorá-la e todos os alvos afetados."
       />
       <Tabs defaultValue="findings">
         <TabsList>

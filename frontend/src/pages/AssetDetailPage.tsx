@@ -36,11 +36,11 @@ export function AssetDetailPage() {
   return (
     <div>
       <Link
-        to="/assets"
+        to="/vulnerabilities"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
-        Voltar para assets
+        Voltar para vulnerabilidades
       </Link>
 
       <PageHeader title={a.hostname ?? a.ip ?? "Ativo"} description={a.domain ?? undefined} />

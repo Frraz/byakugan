@@ -56,8 +56,8 @@ Registro imutável de eventos (RN011). Não pertence a um agregado de negócio; 
 
 | VO | Regras |
 | --- | --- |
-| `Target` | Formato válido de host/domínio/lista de IPs (RN001). |
-| `Authorization` | `authorized_by` não vazio + `scope` definido (RN007). |
+| `Target` | Formato válido de host/domínio/IPv4/IPv6/CIDR (RN001). |
+| `Authorization` | `authorized_by` + `scope` sempre presentes no scan; opcionais na entrada (deployment privado) e auto-preenchidos (usuário autenticado / próprio alvo). O alvo é revalidado contra o `scope`, fail-closed (RN007). |
 | `ScanStatus` | Transições válidas apenas (RN010). |
 | `Severity` | Enum: critical/high/medium/low/info (gravidade teórica). |
 | `Cvss` | Score 0.0–10.0 + vetor opcional. |

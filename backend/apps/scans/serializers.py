@@ -26,6 +26,11 @@ class TargetSerializer(serializers.ModelSerializer):
     kind = serializers.CharField(read_only=True)
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
     scans_count = serializers.IntegerField(read_only=True, default=0)
+    # Deployment privado: autorização é opcional na entrada; o backend preenche
+    # ``authorized_by`` com o usuário logado e ``authorization_scope`` com o
+    # próprio alvo quando não informados (RN007 continua fail-closed).
+    authorized_by = serializers.CharField(required=False, allow_blank=True, default="")
+    authorization_scope = serializers.CharField(required=False, allow_blank=True, default="")
 
     class Meta:
         model = Target
@@ -53,7 +58,12 @@ class TargetSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict[str, Any]) -> Target:
         validated_data["kind"] = classify_target(validated_data["value"])
-        validated_data["created_by"] = self.context["request"].user
+        user = self.context["request"].user
+        validated_data["created_by"] = user
+        if not validated_data.get("authorized_by"):
+            validated_data["authorized_by"] = getattr(user, "email", "") or str(user)
+        if not validated_data.get("authorization_scope"):
+            validated_data["authorization_scope"] = validated_data["value"]
         return super().create(validated_data)
 
     def update(self, instance: Target, validated_data: dict[str, Any]) -> Target:
@@ -181,6 +191,7 @@ class ScanSerializer(serializers.ModelSerializer):
     target_name = serializers.SerializerMethodField()
     findings_count = serializers.SerializerMethodField()
     severity_counts = serializers.SerializerMethodField()
+    exploitable_findings_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Scan
@@ -202,6 +213,7 @@ class ScanSerializer(serializers.ModelSerializer):
             "failure_reason",
             "findings_count",
             "severity_counts",
+            "exploitable_findings_count",
             "created_at",
         )
         read_only_fields = fields
@@ -225,6 +237,17 @@ class ScanSerializer(serializers.ModelSerializer):
         rows = obj.findings.values("severity").annotate(total=Count("id"))
         counts.update({row["severity"]: row["total"] for row in rows})
         return counts
+
+    def get_exploitable_findings_count(self, obj: Scan) -> int:
+        """Quantos findings do scan têm um módulo de exploração automatizado.
+
+        Fonte única: ``exploit.registry.MODULES_BY_KEY`` (as 11 classes com
+        exploit). É o que o botão "Explorar" pode de fato tentar provar — o
+        frontend usa para avisar quando o scan não tem findings exploráveis.
+        """
+        from .exploit.registry import MODULES_BY_KEY
+
+        return obj.findings.filter(playbook_key__in=list(MODULES_BY_KEY)).count()
 
 
 class FindingRefSerializer(serializers.Serializer):

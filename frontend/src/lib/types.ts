@@ -84,6 +84,8 @@ export interface Scan {
   phase: string;
   findings_count: number;
   severity_counts: SeverityCounts;
+  /** Nº de findings com módulo de exploração automatizado (o que "Explorar" pode provar). */
+  exploitable_findings_count: number;
   created_at: string;
 }
 
@@ -224,6 +226,43 @@ export interface Finding {
   playbook_key: string;
   triage_status: TriageStatus;
   created_at: string;
+}
+
+/** Uma ocorrência de uma vulnerabilidade agrupada (num alvo/ativo específico). */
+export interface GroupOccurrence {
+  id: string;
+  severity: Severity;
+  cvss: number | null;
+  triage_status: TriageStatus;
+  created_at: string;
+  asset: AssetSummary | null;
+  scan: ScanSummary | null;
+}
+
+/** Vulnerabilidade lógica consolidada entre alvos (`GET /findings/grouped/`). */
+export interface GroupedFinding {
+  group_key: string;
+  category: FindingCategory;
+  title: string;
+  severity: Severity;
+  cvss: number | null;
+  /** Nº de alvos/ativos distintos afetados. */
+  targets: number;
+  /** Total de ocorrências (todas as execuções). */
+  occurrences: number;
+  open_count: number;
+  triage_status: "open" | "resolved";
+  last_seen: string;
+  finding_id: string | null;
+  playbook_key: string;
+  owasp_2021: string;
+  owasp_2025: string;
+  cwe: string;
+  description: string;
+  evidence: string;
+  recommendation: string;
+  cve: string | null;
+  affected: GroupOccurrence[];
 }
 
 // --- Motor de exploração & Evidências (Fase 7+) ---

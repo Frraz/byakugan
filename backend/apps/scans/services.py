@@ -102,10 +102,16 @@ def create_scan(
 
     if not target:
         raise InvalidTarget("Alvo é obrigatório.")
-    if not authorized_by or not authorization_scope:
-        raise TargetOutOfScope("Autorização (authorized_by + escopo) é obrigatória.")
 
     target = validate_target(target)  # RN001
+
+    # Deployment privado: autorização inline é opcional. Sem "autorizado por",
+    # atribui ao usuário que criou o scan; sem escopo, cai para o próprio alvo
+    # (RN007 segue fail-closed, só com um default sensato).
+    if not authorized_by:
+        authorized_by = getattr(created_by, "email", "") or str(created_by)
+    if not authorization_scope:
+        authorization_scope = target
 
     if not is_target_in_scope(target, authorization_scope):  # RN007
         raise TargetOutOfScope("Alvo fora do escopo autorizado.")

@@ -4,14 +4,16 @@
 
 ## ⚠️ Política de Autorização de Alvos
 
-**Nenhum scan é executado sem autorização registrada.** Antes de enfileirar, o sistema exige:
+**Todo scan carrega autorização registrada e é validado contra o escopo.** Dois campos acompanham cada scan:
 - `authorized_by` — quem autorizou (nome/papel).
 - `authorization_scope` — o escopo permitido (domínios, IPs, sub-redes).
 
-O alvo do scan é validado contra o escopo. Varredura fora do escopo ou sem autorização é bloqueada e auditada. O Byakugan **não** deve ser usado contra terceiros sem permissão explícita — isso é ilegal.
+O alvo do scan é validado contra o escopo. Varredura fora do escopo é bloqueada e auditada. O Byakugan **não** deve ser usado contra terceiros sem permissão explícita — isso é ilegal.
+
+> **Deployment privado (RN007):** por ser um sistema de uso próprio autorizado, esses campos são **opcionais na entrada**. Quando omitidos, o backend auto-preenche `authorized_by` com o e-mail do usuário autenticado e `authorization_scope` com o próprio valor do alvo. A revalidação de escopo (fail-closed) continua valendo **integralmente** — o default só evita redigitar a autorização num ambiente de dono único.
 
 ### Enforcement de escopo (implementação)
-Antes de enfileirar, o serviço `create_scan` valida o formato do alvo (RN001) e verifica se o alvo está **contido no `authorization_scope`** (`apps/scans/authorization.py`). Fora do escopo → `403` + registro de auditoria (`scan.out_of_scope`). Um alvo cadastrado (`Target`) já carrega sua autorização; scans que o referenciam a herdam.
+Antes de enfileirar, o serviço `create_scan` valida o formato do alvo (RN001, aceitando host/domínio/IPv4/IPv6/CIDR) e verifica se o alvo está **contido no `authorization_scope`** (`apps/scans/authorization.py`). Fora do escopo → `403` + registro de auditoria (`scan.out_of_scope`). Um alvo cadastrado (`Target`) já carrega sua autorização (auto-preenchida no cadastro quando omitida); scans que o referenciam a herdam.
 
 **Expiração de autorização (RN015)**: `Target.authorization_expires_at`, quando definido, é **reavaliado a cada tentativa de scan** — não apenas no cadastro. Um alvo com autorização vencida bloqueia a criação de novos scans (`403` + auditoria `scan.authorization_expired`), mesmo que o `Target` continue ativo no cadastro.
 
@@ -208,6 +210,8 @@ Reexecutar o mesmo scan sobre o mesmo alvo cria **novos** registros de `Finding`
 - `Finding.dedup_key` (`parsers.compute_dedup_key`) é um hash estável de `asset + category + título normalizado` — todo `Finding` que representa o "mesmo achado lógico" em execuções distintas compartilha o mesmo `dedup_key`, mesmo sendo linhas diferentes.
 - `FindingTriage` é uma camada **mutável separada**, chaveada por `dedup_key` (único), com `status` ∈ `open` \| `fixed` \| `false-positive` \| `accepted-risk`, nota e autor. Triar um achado (`POST /api/findings/{id}/triage/`, analyst/admin, RN011) afeta **todos** os `Finding` passados e futuros com aquele `dedup_key` — sem jamais reescrever o histórico.
 - `compute_risk`/`compute_asset_risk`/`compute_heatmap` aceitam `excluded_dedup_keys` (resolvido pela view, que consulta `FindingTriage` — `correlation.py` continua livre de I/O) e excluem da soma os achados triados como `fixed`/`false-positive`/`accepted-risk`. O `risk_score` passa a refletir **risco aberto e único**, não a contagem bruta de execuções.
+
+> **Consolidação entre alvos (RN025):** o `dedup_key` inclui `asset_id` — é **por-ativo**, então a mesma vulnerabilidade em dois alvos gera `dedup_key`s diferentes (correto para a triagem, que é por-ativo). A tela de Vulnerabilidades usa uma assinatura **cross-target** `(category, título)` para consolidar a mesma falha em uma única linha, com a contagem de alvos afetados — via `GET /api/findings/grouped/` (`FindingViewSet.grouped`). É uma agregação de leitura; não cria nem altera `Finding`s.
 
 ### Saídas
 

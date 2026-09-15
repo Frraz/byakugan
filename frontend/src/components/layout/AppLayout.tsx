@@ -3,7 +3,6 @@
 import { useState, type ComponentType, type ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  Boxes,
   Crosshair,
   FileBarChart,
   LayoutDashboard,
@@ -14,7 +13,6 @@ import {
   ShieldAlert,
   Sun,
   Target as TargetIcon,
-  BookOpen,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -40,13 +38,11 @@ interface NavEntry {
 
 const NAV: NavEntry[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/targets", label: "Targets", icon: TargetIcon },
+  { to: "/targets", label: "Alvos", icon: TargetIcon },
   { to: "/scans", label: "Scans", icon: Radar },
-  { to: "/assets", label: "Assets", icon: Boxes },
   { to: "/vulnerabilities", label: "Vulnerabilidades", icon: ShieldAlert },
   { to: "/evidence", label: "Evidências", icon: Crosshair },
   { to: "/reports", label: "Relatórios", icon: FileBarChart },
-  { to: "/knowledge", label: "Knowledge Base", icon: BookOpen },
 ];
 
 function NavItem({ to, label, icon: Icon, end, onNavigate }: NavEntry & { onNavigate?: () => void }) {

@@ -9,6 +9,7 @@ import type {
   ExploitationPlaybook,
   Finding,
   FindingTriage,
+  GroupedFinding,
   KnowledgeArticle,
   Paginated,
   Report,
@@ -49,8 +50,10 @@ export function useTargets(params?: TargetFilters) {
 export interface TargetInput {
   name: string;
   value: string;
-  authorized_by: string;
-  authorization_scope: string;
+  // Deployment privado: autorização é opcional na UI. O backend preenche
+  // authorized_by (usuário logado) e authorization_scope (o próprio alvo)
+  // quando não informados.
+  authorization_scope?: string;
   authorization_expires_at?: string | null;
   is_active?: boolean;
 }
@@ -243,6 +246,19 @@ export function useFindings(params?: FindingFilters) {
   return useQuery({
     queryKey: ["findings", params],
     queryFn: () => apiFetch<Paginated<Finding>>("/findings/", { params }),
+  });
+}
+
+/** Vulnerabilidades consolidadas entre alvos (uma linha por vulnerabilidade lógica). */
+export function useGroupedFindings(params?: {
+  severity?: string;
+  category?: string;
+  search?: string;
+  page?: number;
+}) {
+  return useQuery({
+    queryKey: ["findings", "grouped", params],
+    queryFn: () => apiFetch<Paginated<GroupedFinding>>("/findings/grouped/", { params }),
   });
 }
 

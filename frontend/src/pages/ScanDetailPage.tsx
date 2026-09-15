@@ -92,11 +92,21 @@ export function ScanDetailPage() {
   const counts = countSeverities(findingList);
   const evidenceList = evidence.data?.results ?? [];
 
-  const onExploit = () =>
+  const onExploit = () => {
+    if (s.exploitable_findings_count === 0) {
+      toast.warning(
+        "Nenhum finding deste scan é explorável automaticamente. Veja os playbooks manuais na aba Evidências.",
+      );
+      return;
+    }
     exploit.mutate(s.id, {
-      onSuccess: () => toast.success("Exploração enfileirada — os resultados aparecem aqui e em Evidências."),
+      onSuccess: () =>
+        toast.success(
+          `Exploração enfileirada (${s.exploitable_findings_count} finding(s) explorável(is)) — resultados aparecem aqui e em Evidências.`,
+        ),
       onError: (err) => toast.error(errorMessage(err)),
     });
+  };
 
   return (
     <div>
@@ -304,9 +314,11 @@ export function ScanDetailPage() {
               icon={Crosshair}
               title="Nenhuma exploração registrada"
               hint={
-                s.status === "completed"
-                  ? "Use “Explorar” para provar o impacto dos findings deste scan (requer autorização e o motor de exploração habilitado)."
-                  : "A exploração roda sobre um scan concluído."
+                s.status !== "completed"
+                  ? "A exploração roda sobre um scan concluído."
+                  : s.exploitable_findings_count === 0
+                    ? "Nenhum finding deste scan é explorável automaticamente (nenhuma classe com módulo de exploit, como SQLi, XSS, SSRF, IDOR ou credencial default). Veja os playbooks manuais na aba Evidências."
+                    : `${s.exploitable_findings_count} finding(s) deste scan é(são) explorável(is). Use “Explorar” para provar o impacto (requer o motor de exploração habilitado e o alvo no escopo).`
               }
               action={
                 s.status === "completed" &&

@@ -59,6 +59,29 @@ def test_create_target_rejects_invalid_value(analyst_client):
     assert resp.status_code == 400
 
 
+def test_create_target_without_authorization_uses_defaults(analyst_client, analyst_user):
+    """Deployment privado: só nome + valor. Backend preenche a autorização."""
+    resp = analyst_client.post(
+        reverse("scans:target-list"),
+        {"name": "Site", "value": "byakugan.com.br"},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.data["kind"] == "domain"
+    assert resp.data["authorized_by"] == analyst_user.email
+    assert resp.data["authorization_scope"] == "byakugan.com.br"
+
+
+def test_create_target_accepts_ipv6(analyst_client):
+    resp = analyst_client.post(
+        reverse("scans:target-list"),
+        {"name": "v6", "value": "2001:db8::1"},
+        format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.data["kind"] == "ip"
+
+
 def test_only_admin_can_delete_target(analyst_client, admin_client):
     target = TargetFactory()
     url = reverse("scans:target-detail", args=[target.id])

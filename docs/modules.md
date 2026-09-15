@@ -17,6 +17,7 @@
 - **Entrada:** resultados do Discovery Module.
 - **Saída:** `assets`, `services`.
 - **Depende de:** Scans (adapters).
+- **Frontend:** sem aba própria (deployment privado). O detalhe do ativo (`/assets/:id`) é alcançado por *drill-down* a partir do detalhe da vulnerabilidade; a API do módulo permanece completa.
 
 ## Scans (Scanning Engine + Exploitation Engine)
 - **Responsabilidade:** criar, validar, enfileirar e orquestrar scans; scanner adapters (detecção); classificação e cobertura OWASP; e o motor de exploração (prova de impacto).
@@ -50,6 +51,7 @@
 ## Knowledge Base
 - **Responsabilidade:** conteúdo explicativo e de remediação por vulnerabilidade.
 - **Saída:** descrição, impacto, referências, mitigações.
+- **Frontend:** sem aba própria (deployment privado). Os passos de remediação são exibidos **inline** no detalhe da vulnerabilidade (casados por `category`); a API do módulo permanece completa.
 
 ## AI Assistant
 - **Responsabilidade:** explicar/resumir/recomendar sobre dados coletados.

@@ -67,18 +67,23 @@ Criação de usuário (restrito a `admin`).
 Lista alvos cadastrados. Filtros: `?is_active=`, `?kind=`, `?search=` (name/value). Cada item inclui `scans_count` (nº de scans vinculados — usado pela UI para avisar antes de excluir).
 
 ### `POST /api/targets/`
-Cadastra um alvo com autorização (papel `analyst` ou `admin`). O `value` é validado (RN001) e `kind` é derivado.
+Cadastra um alvo (papel `analyst` ou `admin`). **Deployment privado: só `name` + `value` são necessários.** O `value` é validado (RN001) e aceita **host, domínio (ex.: `byakugan.com.br`), IPv4, IPv6 e CIDR**; `kind` é derivado. A autorização é opcional (RN007): `authorized_by` é auto-preenchido com o e-mail do usuário autenticado e `authorization_scope`, quando omitido, assume o próprio `value`.
 ```json
-// request
-{
-  "name": "DMZ empresa X",
-  "value": "192.168.10.0/24",
-  "authorized_by": "João Silva (CISO)",
-  "authorization_scope": "192.168.10.0/24",
-  "authorization_expires_at": "2026-12-31T00:00:00Z"
-}
+// request (mínimo)
+{ "name": "Site institucional", "value": "byakugan.com.br" }
 // 201
-{ "id": "...", "name": "DMZ empresa X", "value": "192.168.10.0/24", "kind": "cidr", "is_active": true }
+{
+  "id": "...", "name": "Site institucional", "value": "byakugan.com.br", "kind": "domain",
+  "authorized_by": "warley@byakugan.test", "authorization_scope": "byakugan.com.br", "is_active": true
+}
+
+// request (opcional: escopo explícito + expiração)
+{
+  "name": "DMZ empresa X", "value": "192.168.10.0/24",
+  "authorization_scope": "192.168.10.0/24", "authorization_expires_at": "2026-12-31T00:00:00Z"
+}
+// 201 → kind: "cidr"
+
 // 400 — value malformado (RN001)
 { "value": ["Alvo inválido: informe host, domínio, IP ou CIDR válido."] }
 ```
@@ -137,27 +142,25 @@ Lista registros DNS não-host descobertos do domínio do ativo (MX/NS/TXT/SOA/SR
 ## Scans
 
 ### `GET /api/scans/`
-Lista scans. Filtros: `?status=`, `?scan_type=`, `?search=` (target). Cada item inclui contexto agregado para a UI: `target_name` (nome do Target cadastrado, se vinculado), `options` (perfil normalizado — ver `docs/scanning-engine.md`), `progress` (0–100), `phase` (adapter/host corrente, ex. `"tls @ 192.168.0.10"`), `findings_count` e `severity_counts` (`{"critical": n, "high": n, "medium": n, "low": n, "info": n}`).
+Lista scans. Filtros: `?status=`, `?scan_type=`, `?search=` (target). Cada item inclui contexto agregado para a UI: `target_name` (nome do Target cadastrado, se vinculado), `options` (perfil normalizado — ver `docs/scanning-engine.md`), `progress` (0–100), `phase` (adapter/host corrente, ex. `"tls @ 192.168.0.10"`), `findings_count`, `severity_counts` (`{"critical": n, "high": n, "medium": n, "low": n, "info": n}`) e `exploitable_findings_count` (nº de findings cuja `playbook_key` tem módulo de exploração automatizado — o que "Explorar" pode de fato provar; alimenta o aviso da UI quando um scan não tem findings exploráveis).
 
 ### `POST /api/scans/`
-Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target_ref`** (id de um Target cadastrado — a autorização é herdada) **ou** os campos de alvo/autorização inline, e opcionalmente `options` (perfil de intensidade — normalizado por `profiles.normalize_options`, campos ausentes assumem o padrão de `intensity`). O alvo é validado contra o escopo antes de enfileirar (RN007), a autorização do `target_ref` não pode estar expirada (RN015), e a varredura só executa se `BYAKUGAN_SCANNING_ENABLED` estiver ativo.
+Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target_ref`** (id de um Target cadastrado — a autorização é herdada) **ou** o alvo inline, e opcionalmente `options` (perfil de intensidade — normalizado por `profiles.normalize_options`, campos ausentes assumem o padrão de `intensity`). No modo inline, `authorized_by`/`authorization_scope` são **opcionais** (deployment privado, RN007) — auto-preenchidos com o usuário autenticado e o próprio alvo. O alvo é validado contra o escopo antes de enfileirar (RN007), a autorização do `target_ref` não pode estar expirada (RN015), e a varredura só executa se `BYAKUGAN_SCANNING_ENABLED` estiver ativo.
 ```json
 // request (via target cadastrado)
 { "target_ref": "<target-id>", "scan_type": "discovery" }
 
-// request (inline, com opções)
+// request (inline, com opções — inclui opt-in de exploração)
 {
   "target": "empresa.com",
   "scan_type": "full",
-  "authorized_by": "João Silva (CISO)",
-  "authorization_scope": "domínio empresa.com e sub-redes internas",
-  "options": { "intensity": "aggressive", "port_set": "top1000", "enabled_checks": ["dns", "tls", "cve-lookup"] }
+  "options": { "intensity": "aggressive", "exploit": true, "port_set": "top1000", "enabled_checks": ["dns", "tls", "cve-lookup"] }
 }
 // 201
 {
   "id": "...", "status": "pending", "target": "empresa.com", "scan_type": "full",
-  "options": { "intensity": "aggressive", "port_set": "top1000", "wordlist_size": 1000, "max_hosts": 256, "max_pages": 100, "max_workers": 32, "rate_delay": 0.0, "enabled_checks": ["dns", "tls", "cve-lookup"] },
-  "progress": 0, "phase": "", "created_at": "..."
+  "options": { "intensity": "aggressive", "exploit": true, "port_set": "top1000", "wordlist_size": 1000, "max_hosts": 256, "max_pages": 100, "max_workers": 32, "rate_delay": 0.0, "enabled_checks": ["dns", "tls", "cve-lookup"] },
+  "progress": 0, "phase": "", "findings_count": 0, "exploitable_findings_count": 0, "created_at": "..."
 }
 // 403 — alvo fora do escopo autorizado (RN007)
 { "detail": "Alvo fora do escopo autorizado." }
@@ -166,7 +169,7 @@ Cria e enfileira um scan. Requer papel `analyst` ou `admin`. Aceita **um `target
 // 409 — se já houver scan em execução para o mesmo alvo (RN002)
 { "detail": "Já existe um scan em execução para este alvo." }
 ```
-> Campos de `options`: `intensity` (`safe`\|`normal`\|`aggressive`), `port_set` (`top16`\|`top100`\|`top1000`), `wordlist_size`, `max_hosts`, `max_pages`, `max_workers`, `rate_delay`, `enabled_checks` (lista de nomes de adapter; `null`/ausente = todos do `scan_type`). Ver `docs/scanning-engine.md` para os tetos absolutos e o efeito de cada perfil.
+> Campos de `options`: `intensity` (`safe`\|`normal`\|`aggressive`), `exploit` (bool — opt-in de exploração ativa; só honrado com `intensity=aggressive`, ver `docs/exploitation-engine.md`), `port_set` (`top16`\|`top100`\|`top1000`), `wordlist_size`, `max_hosts`, `max_pages`, `max_workers`, `rate_delay`, `enabled_checks` (lista de nomes de adapter; `null`/ausente = todos do `scan_type`). Ver `docs/scanning-engine.md` para os tetos absolutos e o efeito de cada perfil.
 
 ### `GET /api/scans/{id}/`
 Detalhe e estado do scan (`pending|running|completed|failed|cancelled`), incluindo `progress`/`phase` atualizados durante a execução (poll este endpoint enquanto `pending`/`running`).
@@ -210,7 +213,28 @@ Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`, `?category=`, 
   "dedup_key": "a3f5...", "triage_status": "open"
 }
 ```
-> `category`: uma das 18 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado).
+> `category`: uma das 18 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado). Os findings também podem ser filtrados por `?owasp_2021=`, `?owasp_2025=` e `?cwe=`.
+
+### `GET /api/findings/grouped/`
+**Vulnerabilidades consolidadas entre alvos** (RN025) — a tela principal de Vulnerabilidades. Agrupa os `Finding` pela assinatura cross-target `(category, título)` (distinta do `dedup_key`, que é por-ativo), para que a mesma falha em vários alvos apareça **uma única vez**. Filtros: `?severity=`, `?category=`, `?search=`, `?page=`. Paginado. Cada grupo traz a severidade/CVSS **máximas** entre as ocorrências, a contagem de alvos afetados distintos, o total de ocorrências, o mapeamento OWASP/CWE, um finding representativo (descrição + evidência de "como foi detectado") e a lista `affected` (onde foi encontrada, com o ativo, o scan e a triagem de cada ocorrência).
+```json
+// 200 (results[])
+{
+  "group_key": "SQL Injection", "category": "injection", "title": "SQL Injection",
+  "severity": "critical", "cvss": 9.8,
+  "targets": 3, "occurrences": 5, "open_count": 4, "triage_status": "open",
+  "last_seen": "...", "finding_id": "<representativo>",
+  "playbook_key": "injection.sqli-error", "owasp_2021": "A03", "owasp_2025": "A05", "cwe": "CWE-89",
+  "cve": null, "description": "...", "evidence": "...", "recommendation": "...",
+  "affected": [
+    { "id": "<finding-id>", "severity": "critical", "cvss": 9.8, "triage_status": "open",
+      "created_at": "...",
+      "asset": { "id": "...", "hostname": "app-01", "ip": "10.0.0.5", "domain": "" },
+      "scan": { "id": "...", "target": "app-01", "scan_type": "full", "created_at": "..." } }
+  ]
+}
+```
+> A triagem continua sendo **por ocorrência** (`dedup_key`, RN018): `POST /api/findings/{id}/triage/` com o `id` de uma ocorrência da lista `affected`.
 
 ### `POST /api/findings/{id}/triage/`
 Classifica o achado lógico (por `dedup_key`, RN018) — afeta **todos** os `Finding` passados e futuros que compartilham o mesmo `dedup_key`, sem alterar o `Finding` em si (RN003). Requer papel `analyst` ou `admin`; auditado (`finding.triage`, RN011).

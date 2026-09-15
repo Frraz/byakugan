@@ -11,10 +11,16 @@ export interface Permissions {
 }
 
 export function usePermissions(): Permissions {
-  const role = useAuthStore((s) => s.user?.role);
+  // Deployment privado: qualquer usuário autenticado tem acesso de escrita.
+  // Antes as ações primárias ("Novo alvo"/"Novo scan") eram escondidas quando
+  // o papel não resolvia exatamente para analyst/admin (ex.: durante a
+  // rehydration do store) — o que fazia os botões "sumirem". O backend
+  // continua sendo a fonte real de permissão (RBAC nas views).
+  const user = useAuthStore((s) => s.user);
+  const authenticated = Boolean(user);
   return {
-    role,
-    canWrite: role === "analyst" || role === "admin",
-    isAdmin: role === "admin",
+    role: user?.role,
+    canWrite: authenticated,
+    isAdmin: authenticated,
   };
 }

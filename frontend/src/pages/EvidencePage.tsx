@@ -27,6 +27,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { errorMessage } from "@/lib/errors";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { Evidence } from "@/lib/types";
 
 function assetLabel(evidence: Evidence): string {
@@ -121,46 +122,91 @@ function EvidenceDetailSheet({
   );
 }
 
+const STATUS_FILTERS: { value: string; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "proven", label: "Comprovado" },
+  { value: "attempted", label: "Tentado" },
+  { value: "blocked", label: "Bloqueado" },
+  { value: "failed", label: "Falha" },
+];
+
 function EvidenceTab() {
   const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<Evidence | null>(null);
-  const params = useMemo(() => ({ status: "proven", page }), [page]);
+  const params = useMemo(
+    () => ({ status: statusFilter === "all" ? undefined : statusFilter, page }),
+    [statusFilter, page],
+  );
   const { data, isLoading, isError, error } = useEvidence(params);
   const results = data?.results ?? [];
 
-  if (isError) return <ErrorBanner message={errorMessage(error)} />;
-  if (isLoading) return <TableSkeleton columns={4} />;
-  if (results.length === 0) {
-    return (
-      <EmptyState
-        icon={Crosshair}
-        title="Nenhuma exploração comprovada ainda"
-        hint="Rode um scan aggressive com exploração habilitada (opt-in) ou dispare a exploração num scan concluído. Requer BYAKUGAN_EXPLOITATION_ENABLED e autorização no escopo."
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {results.map((ev) => (
+  const filters = (
+    <div className="flex flex-wrap gap-1.5">
+      {STATUS_FILTERS.map((f) => (
         <button
-          key={ev.id}
-          onClick={() => setSelected(ev)}
-          className="glass w-full space-y-2 p-4 text-left transition-colors hover:border-primary/40"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <EvidenceStatusBadge status={ev.status} />
-            {ev.impact_level !== "none" && <ImpactBadge impact={ev.impact_level} />}
-            <span className="ml-auto text-xs text-muted-foreground">{formatRelative(ev.created_at)}</span>
-          </div>
-          <p className="font-medium text-foreground">{ev.finding?.title ?? ev.playbook_key}</p>
-          {ev.proof && (
-            <p className="line-clamp-2 font-mono text-xs text-muted-foreground">{ev.proof}</p>
+          key={f.value}
+          onClick={() => {
+            setStatusFilter(f.value);
+            setPage(1);
+          }}
+          className={cn(
+            "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+            statusFilter === f.value
+              ? "border-primary/50 bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:text-foreground",
           )}
-          <p className="text-xs text-muted-foreground">Ativo: {assetLabel(ev)}</p>
+        >
+          {f.label}
         </button>
       ))}
-      <DataPagination count={data?.count ?? 0} page={page} onPageChange={setPage} />
+    </div>
+  );
+
+  if (isError) return <ErrorBanner message={errorMessage(error)} />;
+
+  return (
+    <div className="space-y-4">
+      {filters}
+      {isLoading ? (
+        <TableSkeleton columns={4} />
+      ) : results.length === 0 ? (
+        <EmptyState
+          icon={Crosshair}
+          title={
+            statusFilter === "all"
+              ? "Nenhuma exploração registrada ainda"
+              : `Nenhuma evidência com status "${
+                  STATUS_FILTERS.find((f) => f.value === statusFilter)?.label
+                }"`
+          }
+          hint="Dispare “Explorar” num scan concluído (ou rode um scan aggressive com exploração ligada). Só findings de classes exploráveis (SQLi, XSS, SSRF, credencial default, IDOR…) geram evidência; exige o motor de exploração habilitado e o alvo dentro do escopo."
+        />
+      ) : (
+        <div className="space-y-3">
+          {results.map((ev) => (
+            <button
+              key={ev.id}
+              onClick={() => setSelected(ev)}
+              className="glass w-full space-y-2 p-4 text-left transition-colors hover:border-primary/40"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <EvidenceStatusBadge status={ev.status} />
+                {ev.impact_level !== "none" && <ImpactBadge impact={ev.impact_level} />}
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {formatRelative(ev.created_at)}
+                </span>
+              </div>
+              <p className="font-medium text-foreground">{ev.finding?.title ?? ev.playbook_key}</p>
+              {ev.proof && (
+                <p className="line-clamp-2 font-mono text-xs text-muted-foreground">{ev.proof}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Ativo: {assetLabel(ev)}</p>
+            </button>
+          ))}
+          <DataPagination count={data?.count ?? 0} page={page} onPageChange={setPage} />
+        </div>
+      )}
       <EvidenceDetailSheet evidence={selected} onOpenChange={(open) => !open && setSelected(null)} />
     </div>
   );

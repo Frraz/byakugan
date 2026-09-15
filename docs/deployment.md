@@ -31,6 +31,8 @@ Configuração por `.env` (ver `.env.example`). Segredos nunca versionados.
 
 Mantenha **ambos desligados** por padrão, inclusive em produção; ative apenas em laboratório/engajamento autorizado. A exploração exige ainda opt-in por scan ou gatilho manual e revalidação de escopo por finding (ver `docs/security.md`).
 
+> **Deployment privado/autorizado:** num ambiente de uso próprio sobre alvos autorizados, defina `BYAKUGAN_SCANNING_ENABLED=True` e `BYAKUGAN_EXPLOITATION_ENABLED=True` no `.env` local para que a varredura e o "Explorar" funcionem de ponta a ponta. O default no `.env.example`/`settings` permanece `False` (fail-closed) — a ativação é uma decisão explícita por ambiente.
+
 ## Comandos
 
 ```bash
