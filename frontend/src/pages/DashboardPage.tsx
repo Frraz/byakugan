@@ -1,14 +1,27 @@
-/** Dashboard SOC — KPIs, gráficos de risco, heatmap e scans recentes (docs/ui.md). */
+/** Dashboard SOC — command center: KPIs, risco, heatmap e scans recentes. */
 
 import { Link, useNavigate } from "react-router-dom";
-import { Boxes, Radar, ShieldAlert, Target as TargetIcon } from "lucide-react";
+import {
+  Activity,
+  Boxes,
+  Crosshair,
+  Flame,
+  Grid3x3,
+  PieChart,
+  Plus,
+  Radar,
+  ShieldAlert,
+  Target as TargetIcon,
+} from "lucide-react";
 
 import { PageHeader } from "@/components/PageHeader";
 import { CategoryHeatmap } from "@/components/charts/CategoryHeatmap";
+import { RiskGauge } from "@/components/charts/RiskGauge";
 import { SeverityDonut } from "@/components/charts/SeverityDonut";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { GlassPanel } from "@/components/ui/glass-panel";
-import { Progress } from "@/components/ui/progress";
+import { SectionHeading } from "@/components/ui/section-heading";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
@@ -31,162 +44,218 @@ export function DashboardPage() {
   const summary = risk.data?.summary;
   const topAssets = risk.data?.top_assets ?? [];
   const severity = summary?.severity ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const totalFindings = summary?.findings ?? 0;
 
   return (
-    <div>
-      <PageHeader title="Dashboard" description="Visão consolidada do ambiente monitorado." />
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description="Visão consolidada do ambiente monitorado."
+        actions={
+          <Button onClick={() => navigate("/scans")}>
+            <Plus className="h-4 w-4" />
+            Novo scan
+          </Button>
+        }
+      />
 
       {/* KPIs principais */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Ativos descobertos" value={assets.data?.count ?? "—"} icon={Boxes} />
+        <StatCard
+          label="Ativos descobertos"
+          value={assets.data?.count ?? "—"}
+          icon={Boxes}
+          accent="primary"
+          loading={assets.isLoading}
+        />
         <StatCard
           label="Alvos"
           value={targets.data?.count ?? "—"}
+          hint="Gerenciar alvos"
           accent="accent"
           icon={TargetIcon}
           onClick={() => navigate("/targets")}
+          loading={targets.isLoading}
         />
         <StatCard
           label="Scans ativos"
           value={active}
+          hint={`${scanList.length} no total`}
           accent="primary"
           icon={Radar}
           onClick={() => navigate("/scans")}
+          loading={scans.isLoading}
         />
         <StatCard
           label="Findings críticos"
           value={summary?.severity.critical ?? "—"}
+          hint={`${totalFindings} findings no total`}
           accent="danger"
           icon={ShieldAlert}
           onClick={() => navigate("/vulnerabilities")}
+          loading={risk.isLoading}
         />
       </div>
 
-      {/* Risco + distribuição */}
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <GlassPanel className="space-y-4">
-          <h2 className="text-sm font-semibold text-foreground">Risk Score</h2>
+      {/* Risco + distribuição por severidade */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="glass-elevated flex flex-col p-5">
+          <SectionHeading title="Risk Score" icon={Flame} />
           {risk.isLoading || !summary ? (
-            <Skeleton className="h-24 w-full" />
+            <Skeleton className="mx-auto h-44 w-44 rounded-full" />
           ) : (
-            <>
-              <div className="flex items-end justify-between">
-                <span className="text-4xl font-bold tabular-nums text-foreground">
-                  {summary.risk_score}
-                  <span className="text-lg text-muted-foreground">/100</span>
-                </span>
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-2">
+              <RiskGauge score={Math.round(summary.risk_score)} level={summary.risk_level} />
+              <div className="flex items-center gap-2">
                 <SeverityBadge severity={summary.risk_level} />
+                <span className="text-xs text-muted-foreground">
+                  {summary.findings} findings · {summary.assets} ativos
+                </span>
               </div>
-              <Progress value={summary.risk_score} className="h-2" />
-              <p className="text-xs text-muted-foreground">
-                {summary.findings} findings em {summary.assets} ativos.
-              </p>
-            </>
+            </div>
+          )}
+        </div>
+
+        <GlassPanel className="flex flex-col lg:col-span-2">
+          <SectionHeading title="Distribuição por severidade" icon={PieChart} />
+          {risk.isLoading ? (
+            <Skeleton className="h-52 w-full" />
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <SeverityDonut counts={severity} />
+            </div>
+          )}
+        </GlassPanel>
+      </div>
+
+      {/* Ativos priorizados + Heatmap */}
+      <div className="grid gap-4 lg:grid-cols-5">
+        <GlassPanel className="lg:col-span-2">
+          <SectionHeading
+            title="Ativos priorizados"
+            icon={ShieldAlert}
+            action={
+              topAssets.length > 0 && (
+                <Link to="/vulnerabilities" className="text-xs text-primary hover:underline">
+                  Ver todos
+                </Link>
+              )
+            }
+          />
+          {risk.isLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : topAssets.length === 0 ? (
+            <EmptyState
+              icon={ShieldAlert}
+              title="Nenhum risco a priorizar"
+              hint="Ativos mais críticos aparecem aqui após scans de vulnerability."
+            />
+          ) : (
+            <ul className="space-y-2">
+              {topAssets.map((a) => (
+                <li key={a.asset}>
+                  <Link
+                    to={`/assets/${a.asset}`}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-popover/40 p-2.5 transition-colors hover:border-primary/40"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {a.hostname ?? a.ip ?? a.domain ?? a.asset.slice(0, 8)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{a.findings} findings</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm tabular-nums text-foreground">
+                        {a.risk_score}
+                      </span>
+                      <SeverityBadge severity={a.risk_level} />
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           )}
         </GlassPanel>
 
-        <GlassPanel className="lg:col-span-2">
-          <h2 className="mb-3 text-sm font-semibold text-foreground">
-            Distribuição por severidade
-          </h2>
-          {risk.isLoading ? <Skeleton className="h-52 w-full" /> : <SeverityDonut counts={severity} />}
+        <GlassPanel className="lg:col-span-3">
+          <SectionHeading title="Heatmap por categoria" icon={Grid3x3} />
+          {risk.isLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : (risk.data?.heatmap ?? []).length === 0 ? (
+            <EmptyState
+              icon={Grid3x3}
+              title="Sem dados de risco"
+              hint="O heatmap se preenche conforme os findings são categorizados."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <CategoryHeatmap cells={risk.data?.heatmap ?? []} />
+            </div>
+          )}
         </GlassPanel>
       </div>
 
-      {/* Ativos priorizados */}
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Ativos priorizados</h2>
-      {risk.isLoading ? (
-        <Skeleton className="h-32 w-full rounded-2xl" />
-      ) : topAssets.length === 0 ? (
-        <EmptyState
-          icon={ShieldAlert}
-          title="Nenhum risco a priorizar"
-          hint="Assim que scans de vulnerability produzirem findings, os ativos mais críticos aparecem aqui."
-        />
-      ) : (
-        <div className="glass overflow-x-auto p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ativo</TableHead>
-                <TableHead>Risk Score</TableHead>
-                <TableHead>Nível</TableHead>
-                <TableHead className="text-right">Findings</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {topAssets.map((a) => (
-                <TableRow key={a.asset}>
-                  <TableCell>
-                    <Link
-                      to={`/assets/${a.asset}`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      {a.hostname ?? a.ip ?? a.domain ?? a.asset.slice(0, 8)}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="font-mono">{a.risk_score}/100</TableCell>
-                  <TableCell>
-                    <SeverityBadge severity={a.risk_level} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">
-                    {a.findings}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {/* Heatmap */}
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Heatmap por categoria</h2>
+      {/* Scans recentes */}
       <GlassPanel>
-        {risk.isLoading ? (
-          <Skeleton className="h-32 w-full" />
+        <SectionHeading
+          title="Scans recentes"
+          icon={Activity}
+          action={
+            <Link to="/scans" className="text-xs text-primary hover:underline">
+              Ver todos
+            </Link>
+          }
+        />
+        {scans.isLoading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : scanList.length === 0 ? (
+          <EmptyState
+            icon={Radar}
+            title="Nenhum scan ainda"
+            hint="Cadastre um alvo e inicie uma descoberta."
+            action={
+              <Button variant="secondary" onClick={() => navigate("/scans")}>
+                <Crosshair className="h-4 w-4" />
+                Iniciar scan
+              </Button>
+            }
+          />
         ) : (
-          <CategoryHeatmap cells={risk.data?.heatmap ?? []} />
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Alvo</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Criado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {scanList.slice(0, 8).map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>
+                      <Link
+                        to={`/scans/${s.id}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {s.target_name ?? s.target}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="capitalize text-muted-foreground">{s.scan_type}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={s.status} />
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {formatRelative(s.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </GlassPanel>
-
-      {/* Scans recentes */}
-      <h2 className="mb-3 mt-8 text-lg font-semibold text-foreground">Scans recentes</h2>
-      {scans.isLoading ? (
-        <Skeleton className="h-40 w-full rounded-2xl" />
-      ) : scanList.length === 0 ? (
-        <EmptyState icon={Radar} title="Nenhum scan ainda" hint="Cadastre um alvo e inicie uma descoberta." />
-      ) : (
-        <div className="glass overflow-x-auto p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Alvo</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Criado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scanList.slice(0, 8).map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>
-                    <Link to={`/scans/${s.id}`} className="font-medium text-primary hover:underline">
-                      {s.target_name ?? s.target}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="capitalize text-muted-foreground">{s.scan_type}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={s.status} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatRelative(s.created_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
     </div>
   );
 }

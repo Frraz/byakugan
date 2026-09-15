@@ -1,7 +1,7 @@
 /** Diálogo de criação de scan — via alvo cadastrado ou inline (RN001/RN002/RN007). */
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Crosshair, Info, Radar, ShieldAlert } from "lucide-react";
+import { Check, Crosshair, Info, Radar, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -93,24 +93,49 @@ function OptionCard({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition-colors",
+        "relative flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition-all duration-200",
         active
           ? "border-primary/60 bg-primary/10 shadow-glow"
           : "border-border hover:border-primary/30 hover:bg-secondary/50",
       )}
     >
+      {active && (
+        <span className="absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </span>
+      )}
       <span className={cn("text-sm font-semibold", active ? "text-primary" : "text-foreground")}>
         {title}
       </span>
-      <span className="text-xs leading-snug text-muted-foreground">{hint}</span>
+      <span className="pr-4 text-xs leading-snug text-muted-foreground">{hint}</span>
     </button>
   );
 }
 
-function SectionLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
+function SectionLabel({
+  step,
+  children,
+  hint,
+}: {
+  step?: number;
+  children: React.ReactNode;
+  hint?: string;
+}) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-sm font-medium text-foreground">{children}</span>
+    <div className="flex items-center gap-2">
+      {step != null && (
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold tabular-nums text-primary">
+          {step}
+        </span>
+      )}
+      <span
+        className={cn(
+          "text-sm font-semibold text-foreground",
+          step == null && "text-xs uppercase tracking-wide text-muted-foreground",
+        )}
+      >
+        {children}
+      </span>
       {hint && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -244,7 +269,7 @@ export function ScanFormDialog({
         <form onSubmit={onSubmit} className="space-y-6">
           {/* 1 — Tipo de scan */}
           <section className="space-y-2">
-            <SectionLabel>1 · Tipo de scan</SectionLabel>
+            <SectionLabel step={1}>Tipo de scan</SectionLabel>
             <div className="grid gap-2 sm:grid-cols-2">
               {SCAN_TYPES.map((t) => (
                 <OptionCard
@@ -260,7 +285,7 @@ export function ScanFormDialog({
 
           {/* 2 — Alvo */}
           <section className="space-y-2">
-            <SectionLabel>2 · Alvo</SectionLabel>
+            <SectionLabel step={2}>Alvo</SectionLabel>
             <Tabs value={mode} onValueChange={(v) => setMode(v as "target" | "inline")}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="target">Alvo cadastrado</TabsTrigger>
@@ -318,7 +343,7 @@ export function ScanFormDialog({
 
           {/* 3 — Intensidade */}
           <section className="space-y-2">
-            <SectionLabel>3 · Intensidade</SectionLabel>
+            <SectionLabel step={3}>Intensidade</SectionLabel>
             <div className="grid gap-2 sm:grid-cols-3">
               {INTENSITIES.map((i) => (
                 <OptionCard
@@ -334,7 +359,7 @@ export function ScanFormDialog({
 
           {/* 4 — Exploração (prova de impacto) */}
           <section className="space-y-2">
-            <SectionLabel hint="A exploração ativa prova o impacto real dos findings (ex.: extrair versão do banco via SQLi). É sempre não-destrutiva (RoE) e exige o motor de exploração habilitado. Só disponível em intensidade aggressive.">
+            <SectionLabel step={4} hint="A exploração ativa prova o impacto real dos findings (ex.: extrair versão do banco via SQLi). É sempre não-destrutiva (RoE) e exige o motor de exploração habilitado. Só disponível em intensidade aggressive.">
               4 · Exploração (prova de impacto)
             </SectionLabel>
             <button
@@ -375,7 +400,7 @@ export function ScanFormDialog({
 
           {/* 5 — Ajustes finos */}
           <section className="space-y-3">
-            <SectionLabel hint="Padrões vêm do perfil de intensidade escolhido; limites máximos são impostos pelo backend.">
+            <SectionLabel step={5} hint="Padrões vêm do perfil de intensidade escolhido; limites máximos são impostos pelo backend.">
               5 · Ajustes finos (opcional)
             </SectionLabel>
             <div className="grid gap-3 sm:grid-cols-2">

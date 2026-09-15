@@ -146,6 +146,7 @@ export function ScansPage() {
           accent="primary"
           onClick={filtersActive ? clearFilters : undefined}
           hint={filtersActive ? "limpar filtros" : undefined}
+          loading={stats.isLoading}
         />
         <StatCard
           label="Em execução"
@@ -154,6 +155,7 @@ export function ScansPage() {
           accent={s && s.active > 0 ? "primary" : "muted"}
           hint={s && s.active > 0 ? "ativos agora" : "nenhum ativo"}
           onClick={() => setStatusFilter(status === "running" ? "all" : "running")}
+          loading={stats.isLoading}
         />
         <StatCard
           label="Findings"
@@ -161,6 +163,7 @@ export function ScansPage() {
           icon={ShieldAlert}
           accent={s && s.findings_by_severity.critical > 0 ? "danger" : "warning"}
           hint={s ? `${s.findings_by_severity.critical} críticos` : undefined}
+          loading={stats.isLoading}
         />
         <StatCard
           label="Exploits provados"
@@ -168,6 +171,7 @@ export function ScansPage() {
           icon={Crosshair}
           accent={s && s.exploits_proven > 0 ? "danger" : "muted"}
           hint="prova de impacto"
+          loading={stats.isLoading}
         />
       </div>
 

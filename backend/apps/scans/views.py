@@ -460,7 +460,6 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
             pair_filter |= Q(category=category, title=title)
 
         occurrences_by_pair: dict[tuple[str, str], list[Finding]] = {}
-        representative: dict[tuple[str, str], Finding] = {}
         if pair_filter:
             for finding in (
                 self.get_queryset().filter(pair_filter).order_by("-created_at")

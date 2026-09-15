@@ -61,6 +61,7 @@ function FindingsTab() {
             label={SEVERITY_LABELS[sev]}
             value={counts ? counts[sev] : "—"}
             accent={SEVERITY_ACCENT[sev]}
+            loading={overview.isLoading}
             onClick={() => {
               setSeverity((cur) => (cur === sev ? "all" : sev));
               setPage(1);
