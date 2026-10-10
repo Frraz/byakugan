@@ -10,12 +10,22 @@ Checagens não-destrutivas em torno de formulários de login:
   bloqueio) — indício de ausência de proteção contra força bruta. O burst é
   minúsculo e usa credenciais obviamente falsas (não compromete conta alguma);
   a decisão aqui é pura, o burst limitado fica no adapter (gated em aggressive).
+- **JWT fraco**: tokens JWT encontrados em páginas já rastreadas são
+  decodificados (sem I/O extra — nenhuma requisição é enviada para isso) e
+  analisados por três falhas estruturais clássicas: ``alg: none`` aceito,
+  claim ``exp`` ausente (token nunca expira) e assinatura HS256 verificável
+  com um segredo fraco/comum (computação local via HMAC, nunca contra a
+  rede do alvo).
 
 Funções puras: recebem respostas já obtidas pelo adapter, nunca fazem I/O.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import re
 from typing import Any
 
@@ -142,3 +152,256 @@ def detect_missing_rate_limit(
         ),
         playbook_key="auth.no-rate-limit",
     )
+
+
+# --- JWT fraco (A07) --------------------------------------------------------
+
+#: Casa um JWT (3 segmentos base64url separados por ponto) embutido em texto
+#: livre — corpo de página/JSON, header ``Authorization: Bearer ...`` ou
+#: ``Set-Cookie``. Exige o prefixo típico de um header JWT em Base64url
+#: (``eyJ`` = ``{"`` codificado) para reduzir falso positivo.
+#: Sem ``\b`` de fechamento: um JWT ``alg: none`` legítimo termina com a
+#: assinatura vazia (terceiro segmento com zero caracteres) — nesse caso o
+#: caractere anterior (o ponto) já não é "de palavra", então um ``\b`` final
+#: nunca haveria fronteira para casar, e justamente o token mais crítico
+#: (sem assinatura) deixaria de ser encontrado.
+JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*")
+
+#: Segredos HS256 comuns/triviais usados em tutoriais, exemplos e código não
+#: revisado — testar localmente (HMAC, sem rede) se algum assina o token
+#: encontrado prova que qualquer atacante poderia forjar tokens arbitrários.
+COMMON_JWT_SECRETS: tuple[str, ...] = (
+    "secret",
+    "secretkey",
+    "your-secret-key",
+    "changeme",
+    "password",
+    "123456",
+    "jwt_secret",
+    "jwtsecret",
+    "supersecret",
+    "my-secret",
+    "qwerty",
+)
+
+
+def find_jwt_candidates(text: str) -> list[str]:
+    """Extrai candidatos a JWT (deduplicados, ordem preservada) de ``text``."""
+    seen: set[str] = set()
+    found: list[str] = []
+    for match in JWT_RE.finditer(text or ""):
+        token = match.group(0)
+        if token not in seen:
+            seen.add(token)
+            found.append(token)
+    return found
+
+
+def _b64url_decode(segment: str) -> bytes | None:
+    padded = segment + "=" * (-len(segment) % 4)
+    try:
+        return base64.urlsafe_b64decode(padded.encode("ascii"))
+    except Exception:  # noqa: BLE001 — segmento inválido não deve derrubar o scan
+        return None
+
+
+def decode_jwt_unverified(token: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Decodifica header e payload de um JWT **sem validar a assinatura**.
+
+    Usado só para inspecionar a estrutura (``alg``, ``exp``) — nunca para
+    confiar no conteúdo como autenticado. Retorna ``None`` se o token não
+    tiver o formato esperado (3 segmentos, header/payload JSON válidos).
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    header_raw = _b64url_decode(parts[0])
+    payload_raw = _b64url_decode(parts[1])
+    if header_raw is None or payload_raw is None:
+        return None
+    try:
+        header = json.loads(header_raw)
+        payload = json.loads(payload_raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(header, dict) or not isinstance(payload, dict):
+        return None
+    return header, payload
+
+
+def _hs256_signature(header_b64: str, payload_b64: str, secret: str) -> str:
+    message = f"{header_b64}.{payload_b64}".encode("ascii")
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def find_weak_hs256_secret(token: str) -> str | None:
+    """Tenta assinar ``token`` com segredos comuns — retorna o primeiro que casa.
+
+    Puramente local (HMAC-SHA256 em memória): nenhuma requisição é feita ao
+    alvo. Só se aplica a tokens ``alg: HS256``; outros algoritmos retornam
+    ``None`` sem tentar nada.
+    """
+    decoded = decode_jwt_unverified(token)
+    if decoded is None:
+        return None
+    header, _ = decoded
+    if str(header.get("alg", "")).upper() != "HS256":
+        return None
+    try:
+        header_b64, payload_b64, signature_b64 = token.split(".")
+    except ValueError:
+        return None
+    for secret in COMMON_JWT_SECRETS:
+        candidate = _hs256_signature(header_b64, payload_b64, secret)
+        if hmac.compare_digest(candidate, signature_b64):
+            return secret
+    return None
+
+
+def analyze_jwt(token: str, *, source_url: str = "") -> dict[str, Any] | None:
+    """Analisa um JWT encontrado em trânsito por falhas estruturais clássicas.
+
+    Prioriza, em ordem de gravidade: ``alg: none`` aceito pelo emissor (o
+    token em si já declara que não há assinatura) > segredo HS256 fraco
+    (forjável) > ``exp`` ausente (sessão que nunca expira). Reporta só a
+    primeira encontrada para não duplicar o mesmo token em vários findings.
+
+    ``source_url``: a página onde o token foi visto (o adapter passa
+    ``page.url`` do crawl) — só preenchido nos dois casos **forjáveis**
+    (alg:none / segredo fraco), no formato padrão ``URL: ... | Parâmetro:
+    '...'`` (``exploit/base.py:parse_web_target``), para que o motor de
+    exploração saiba contra qual página reenviar um token forjado e observar
+    se o comportamento muda. Omitido ("") quando o chamador não tem a URL —
+    o finding fica sem coordenadas, e corretamente sem módulo de exploração.
+    """
+    decoded = decode_jwt_unverified(token)
+    if decoded is None:
+        return None
+    header, payload = decoded
+    alg = str(header.get("alg", "")).lower()
+    shown = f"{token[:24]}...{token[-8:]}" if len(token) > 36 else token
+    url_prefix = f"URL: {source_url} | Parâmetro: '' | " if source_url else ""
+
+    if alg in {"none", ""}:
+        return _finding(
+            title="JWT com algoritmo 'none' aceito",
+            severity="critical",
+            description=(
+                "Um JWT em trânsito declara o algoritmo 'none' (ou omite o "
+                "algoritmo) no header — se o backend aceitar esse token sem "
+                "assinatura, qualquer atacante pode forjar um token com "
+                "qualquer claim (ex.: role=admin) sem conhecer segredo algum."
+            ),
+            evidence=f"{url_prefix}Token: {shown} | header.alg='{header.get('alg', '')}'",
+            recommendation=(
+                "Nunca aceitar 'alg: none'; fixar explicitamente o algoritmo "
+                "esperado na verificação (nunca derivá-lo do próprio token) e "
+                "usar uma biblioteca JWT atualizada."
+            ),
+            playbook_key="auth.jwt-weak",
+        )
+
+    weak_secret = find_weak_hs256_secret(token)
+    if weak_secret is not None:
+        return _finding(
+            title="JWT assinado com segredo HS256 fraco/comum",
+            severity="critical",
+            description=(
+                "A assinatura HS256 de um JWT em trânsito foi reproduzida "
+                "localmente com um segredo comum/trivial — qualquer atacante "
+                "com a mesma lista de segredos pode forjar tokens arbitrários "
+                "(incluindo elevar privilégios ou se autenticar como outro usuário)."
+            ),
+            evidence=f"{url_prefix}Token: {shown} | segredo testado localmente (HMAC): '{weak_secret}'",
+            recommendation=(
+                "Usar um segredo HS256 longo, aleatório e exclusivo (≥32 bytes), "
+                "nunca um valor de exemplo/tutorial, e considerar migrar para "
+                "RS256/ES256 (par de chaves assimétrico)."
+            ),
+            playbook_key="auth.jwt-weak",
+        )
+
+    if "exp" not in payload:
+        return _finding(
+            title="JWT sem claim de expiração ('exp')",
+            severity="medium",
+            description=(
+                "Um JWT em trânsito não possui a claim 'exp' — o token nunca "
+                "expira, então um token vazado/roubado permanece válido "
+                "indefinidamente, ampliando a janela de exploração de qualquer "
+                "comprometimento de sessão."
+            ),
+            evidence=f"Token: {shown} | claims do payload: {sorted(payload.keys())}",
+            recommendation=(
+                "Sempre incluir 'exp' com um tempo de vida curto, e usar "
+                "refresh tokens (revogáveis) para renovar a sessão."
+            ),
+            playbook_key="auth.jwt-weak",
+        )
+
+    return None
+
+
+# --- Forja de JWT (usada pelo motor de exploração, nunca pela detecção) ----
+
+#: Nomes de claim que, se já presentes no payload original, costumam
+#: controlar privilégio — elevamos só os que **já existem** (nunca inventamos
+#: estrutura nova: um claim que o emissor nunca usa não teria efeito real e
+#: tornaria a "prova" especulativa).
+_PRIVILEGE_CLAIM_NAMES = (
+    "role",
+    "roles",
+    "is_admin",
+    "isadmin",
+    "admin",
+    "scope",
+    "scopes",
+    "permissions",
+    "type",
+)
+
+
+def elevate_claims(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Retorna ``(payload_elevado, claims_alteradas)`` — só altera claims já existentes.
+
+    O tipo original de cada valor é preservado (bool→``True``, lista→
+    ``["admin"]``, string→``"admin"``) para o token forjado continuar
+    estruturalmente plausível para o backend que o emitiu.
+    """
+    elevated = dict(payload)
+    changed: list[str] = []
+    for key in list(elevated.keys()):
+        if key.lower() not in _PRIVILEGE_CLAIM_NAMES:
+            continue
+        value = elevated[key]
+        if isinstance(value, bool):
+            elevated[key] = True
+        elif isinstance(value, list):
+            elevated[key] = ["admin"]
+        else:
+            elevated[key] = "admin"
+        changed.append(key)
+    return elevated, changed
+
+
+def forge_jwt(header: dict[str, Any], payload: dict[str, Any], *, secret: str | None) -> str:
+    """Monta um JWT com ``header``/``payload`` dados — ``secret=None`` → ``alg: none``.
+
+    Função pura (sem I/O): usada pelo motor de exploração para construir o
+    token que será reenviado via ``ExploitContext.fetch`` — a forja em si não
+    é a exploração, só o reenvio contra o alvo é.
+    """
+    forged_header = dict(header)
+    if secret is None:
+        forged_header["alg"] = "none"
+    header_b64 = _b64url(json.dumps(forged_header).encode())
+    payload_b64 = _b64url(json.dumps(payload).encode())
+    if secret is None:
+        return f"{header_b64}.{payload_b64}."
+    signature_b64 = _hs256_signature(header_b64, payload_b64, secret)
+    return f"{header_b64}.{payload_b64}.{signature_b64}"
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")

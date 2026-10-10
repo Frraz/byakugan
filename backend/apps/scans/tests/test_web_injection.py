@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 from apps.scans.web.injection import (
+    CRLF_HEADER_NAME,
+    CRLF_HEADER_VALUE,
+    HOST_HEADER_MARKER,
     ProbeResponse,
     boolean_sqli_payloads,
     build_checks,
     build_injected_url,
+    build_nosqli_injected_url,
+    detect_boolean_ldap,
+    detect_boolean_nosqli,
     detect_boolean_sqli,
+    detect_host_header_reflection,
     detect_time_based,
+    ldap_boolean_payloads,
 )
 
 
@@ -142,6 +150,29 @@ def test_command_injection_not_detected_in_clean_response():
     assert check.run(ProbeResponse(200, {}, "<html>Command not found</html>")) is None
 
 
+def test_crlf_injection_detects_genuine_extra_header():
+    check = _check("crlf")
+    resp = ProbeResponse(200, {CRLF_HEADER_NAME: CRLF_HEADER_VALUE}, "<html>ok</html>")
+    assert check.run(resp) is not None
+
+
+def test_crlf_injection_case_insensitive_header_match():
+    check = _check("crlf")
+    resp = ProbeResponse(200, {"X-Byakugan-CRLF": "Injected"}, "<html>ok</html>")
+    assert check.run(resp) is not None
+
+
+def test_crlf_injection_not_detected_without_extra_header():
+    check = _check("crlf")
+    assert check.run(ProbeResponse(200, {}, "<html>ok</html>")) is None
+
+
+def test_crlf_injection_ignores_unrelated_header_with_same_name_different_value():
+    check = _check("crlf")
+    resp = ProbeResponse(200, {CRLF_HEADER_NAME: "something-else"}, "<html>ok</html>")
+    assert check.run(resp) is None
+
+
 # --- Todos os checks são RN008-completos -------------------------------
 
 
@@ -205,3 +236,101 @@ def test_detect_time_based_ignores_small_delay():
 def test_detect_time_based_threshold_boundary():
     assert detect_time_based(elapsed_seconds=4.3, baseline_elapsed_seconds=0.3) is True
     assert detect_time_based(elapsed_seconds=4.29, baseline_elapsed_seconds=0.3) is False
+
+
+# --- Host Header Injection ----------------------------------------------
+
+
+def test_detect_host_header_reflection_in_location():
+    evidence = detect_host_header_reflection(
+        status_code=302,
+        headers={"Location": f"https://{HOST_HEADER_MARKER}/reset?token=abc"},
+        body="",
+    )
+    assert evidence is not None and HOST_HEADER_MARKER in evidence
+
+
+def test_detect_host_header_reflection_in_body():
+    evidence = detect_host_header_reflection(
+        status_code=200,
+        headers={},
+        body=f'<link rel="canonical" href="https://{HOST_HEADER_MARKER}/page">',
+    )
+    assert evidence is not None
+
+
+def test_detect_host_header_reflection_none_when_not_reflected():
+    assert (
+        detect_host_header_reflection(status_code=200, headers={}, body="<html>normal page</html>")
+        is None
+    )
+
+
+# --- NoSQL injection (booleana) -----------------------------------------
+
+
+def test_build_nosqli_injected_url_renames_key():
+    url = build_nosqli_injected_url("http://t/users?id=5&sort=asc", "id", "$ne", "x")
+    assert "id%5B%24ne%5D=x" in url or "id[$ne]=x" in url
+    assert "sort=asc" in url
+    assert "id=5" not in url
+
+
+def test_detect_boolean_nosqli_flags_conditional_pattern():
+    baseline = "<html>user profile: alice</html>"
+    bypass = "<html>user profile: alice</html>"  # $ne continuou casando o registro
+    exact = "<html>Nothing matched this query at all, much longer empty-state page</html>"
+    evidence = detect_boolean_nosqli(bypass_body=bypass, exact_body=exact, baseline_body=baseline)
+    assert evidence is not None
+
+
+def test_detect_boolean_nosqli_no_signal_when_both_match_baseline():
+    baseline = "<html>user profile: alice</html>"
+    assert (
+        detect_boolean_nosqli(bypass_body=baseline, exact_body=baseline, baseline_body=baseline)
+        is None
+    )
+
+
+def test_detect_boolean_nosqli_no_signal_when_both_differ():
+    baseline = "<html>user profile: alice</html>"
+    different = "<html>a completely different and much longer page than the baseline</html>"
+    assert (
+        detect_boolean_nosqli(bypass_body=different, exact_body=different, baseline_body=baseline)
+        is None
+    )
+
+
+# --- LDAP injection (booleana) -------------------------------------------
+
+
+def test_ldap_boolean_payloads_append_wildcard_and_filter_close():
+    true_payload, false_payload = ldap_boolean_payloads("alice")
+    assert true_payload == "alice*"
+    assert false_payload == "alice)(uid=byaknoexist"
+
+
+def test_detect_boolean_ldap_flags_conditional_pattern():
+    baseline = "<html>user profile: alice</html>"
+    true_body = "<html>user profile: alice</html>"  # wildcard continuou casando
+    false_body = "<html>No entries matched this search filter at all, much longer</html>"
+    evidence = detect_boolean_ldap(
+        true_body=true_body, false_body=false_body, baseline_body=baseline
+    )
+    assert evidence is not None
+
+
+def test_detect_boolean_ldap_no_signal_when_both_match_baseline():
+    baseline = "<html>user profile: alice</html>"
+    assert (
+        detect_boolean_ldap(true_body=baseline, false_body=baseline, baseline_body=baseline) is None
+    )
+
+
+def test_detect_boolean_ldap_no_signal_when_both_differ():
+    baseline = "<html>user profile: alice</html>"
+    different = "<html>a completely different and much longer page than the baseline</html>"
+    assert (
+        detect_boolean_ldap(true_body=different, false_body=different, baseline_body=baseline)
+        is None
+    )

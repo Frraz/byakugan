@@ -47,6 +47,16 @@ SENSITIVE_PATHS: dict[str, str | None] = {
     "/elmah.axd": None,
     "/telescope": None,
     "/_profiler": None,
+    # Documentação de API exposta (Swagger/OpenAPI) — revela toda a superfície
+    # de endpoints/parâmetros da API, incluindo rotas não documentadas publicamente.
+    "/swagger.json": '"swagger"',
+    "/swagger-ui.html": None,
+    "/swagger-ui/": None,
+    "/v2/api-docs": '"swagger"',
+    "/v3/api-docs": '"openapi"',
+    "/openapi.json": '"openapi"',
+    "/api-docs": None,
+    "/api/swagger.json": '"swagger"',
 }
 
 

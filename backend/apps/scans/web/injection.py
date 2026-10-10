@@ -146,6 +146,147 @@ def _detect_ssrf(response: ProbeResponse, payload: str) -> str | None:
     return None
 
 
+# --- CRLF Injection / HTTP Response Splitting --------------------------------
+# Injeta uma sequência CRLF (``\r\n``) seguida de um header sintético no
+# parâmetro. Se o backend concatena o valor recebido direto num header de
+# resposta (ex.: Location de um redirect, Set-Cookie) sem sanitizar CR/LF, o
+# cliente HTTP recebe um header EXTRA genuíno (``X-Byakugan-Crlf: injected``)
+# — o parsing HTTP padrão (``requests``/``urllib3``) já o separa corretamente
+# em ``response.headers``, então basta checar sua presença.
+CRLF_HEADER_NAME = "x-byakugan-crlf"
+CRLF_HEADER_VALUE = "injected"
+CRLF_PAYLOAD = f"byk\r\n{CRLF_HEADER_NAME}: {CRLF_HEADER_VALUE}"
+
+
+def _detect_crlf_injection(response: ProbeResponse, payload: str) -> str | None:
+    for key, value in response.headers.items():
+        if key.lower() == CRLF_HEADER_NAME and value.strip().lower() == CRLF_HEADER_VALUE:
+            return (
+                f"Header '{key}: {value}' injetado via CRLF apareceu como header de resposta "
+                "genuíno e separado — o valor do parâmetro foi concatenado sem sanitização "
+                "num header de resposta."
+            )
+    return None
+
+
+# --- Host Header Injection ---------------------------------------------------
+# Domínio reservado (RFC 2606, nunca resolve de verdade) enviado no header
+# Host em vez da URL — se o servidor confiar nesse header para montar links
+# absolutos (reset de senha, canonical, redirects), ele "volta" na resposta.
+HOST_HEADER_MARKER = "byakugan-hhi-probe.invalid"
+
+
+def detect_host_header_reflection(
+    *, status_code: int, headers: dict[str, str], body: str, marker: str = HOST_HEADER_MARKER
+) -> str | None:
+    """Detecta reflexão do header ``Host`` injetado na resposta.
+
+    Dois sinais, sem distinguir qual — ambos provam a mesma falha (o backend
+    confia no header ``Host`` controlado pelo cliente em vez da configuração
+    do servidor): o marcador aparece no header ``Location`` de um redirect,
+    ou aparece no corpo (ex.: um link absoluto de reset de senha/canonical
+    montado a partir do Host recebido).
+    """
+    location = headers.get("Location") or headers.get("location") or ""
+    if marker in location:
+        return f"Header Location reflete o Host injetado: '{location}'."
+    if marker in body:
+        return f"Corpo da resposta reflete o Host injetado ('{marker}') — provável link absoluto montado a partir do header Host."
+    return None
+
+
+# --- NoSQL injection (booleana) ---------------------------------------------
+# Operadores MongoDB (``$ne``/``$eq``) expressos como chave de query string —
+# frameworks que fazem parsing "rico" de query strings (ex.: Express + qs)
+# interpretam ``param[$ne]=x`` como ``{param: {"$ne": "x"}}`` se o valor for
+# passado direto para uma consulta Mongo sem validação de tipo/schema.
+
+
+def build_nosqli_injected_url(url: str, param: str, operator: str, value: str) -> str:
+    """Substitui a chave ``param`` por ``param[operator]`` na query string.
+
+    Diferente de ``build_injected_url`` (que só troca o *valor*), aqui a
+    *chave* muda — é assim que um parser tipo ``qs``/PHP interpreta um
+    operador de consulta vindo da URL.
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    query_pairs = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != param]
+    query_pairs.append((f"{param}[{operator}]", value))
+    new_query = urlencode(query_pairs)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+
+def _similar_response(a: str, b: str, *, abs_min: int = 15, rel: float = 0.03) -> bool:
+    """True se dois corpos têm tamanho parecido — comparador compartilhado
+    pelas duas heurísticas booleanas (SQLi e NoSQLi) desta classe."""
+    if not a and not b:
+        return True
+    longer = max(len(a), len(b), 1)
+    return abs(len(a) - len(b)) <= max(abs_min, int(longer * rel))
+
+
+def detect_boolean_nosqli(*, bypass_body: str, exact_body: str, baseline_body: str) -> str | None:
+    """Compara respostas a um operador de bypass (``$ne``) × busca exata inexistente.
+
+    ``bypass_body``: resposta a ``param[$ne]=<valor-aleatório>`` — se o
+    parser interpretar o operador, isso equivale a "diferente de um valor
+    que nunca existiria", ou seja, continua casando o registro original
+    (resposta ≈ baseline). ``exact_body``: resposta a ``param[$eq]=<mesmo
+    valor aleatório>`` — uma busca exata por algo inexistente deveria não
+    casar nada (resposta ≠ baseline). O padrão condicional (bypass ≈
+    baseline, exact ≠ baseline) só aparece se a chave ``[$ne]``/``[$eq]``
+    foi de fato interpretada como operador pelo backend.
+    """
+    if _similar_response(bypass_body, baseline_body) and not _similar_response(
+        exact_body, baseline_body
+    ):
+        return (
+            "Resposta ao operador de bypass ('param[$ne]=<valor aleatório>') é "
+            "semelhante ao baseline, mas a busca exata pelo mesmo valor "
+            "inexistente ('param[$eq]=<mesmo valor>') resulta em resposta "
+            "significativamente diferente — indício de que a chave de query foi "
+            "interpretada como operador de consulta (NoSQL injection)."
+        )
+    return None
+
+
+# --- LDAP injection (booleana) -----------------------------------------------
+# Mesma estratégia das booleanas acima, adaptada à sintaxe de filtro LDAP:
+# um wildcard ('*') amplia o match sem quebrar a sintaxe de um filtro
+# concatenado (ex.: "(uid=<valor>)"), então o "verdadeiro" tende a continuar
+# parecido com o baseline; um fechamento de filtro seguido de um atributo
+# inexistente só muda a resposta se o valor for de fato interpretado como
+# parte da estrutura do filtro — se não for (não vulnerável), vira apenas
+# uma busca literal por uma string que não existe, igualmente sem match.
+
+
+def ldap_boolean_payloads(original_value: str) -> tuple[str, str]:
+    """``(payload_verdadeiro, payload_falso)`` — anexados ao valor original do parâmetro."""
+    return f"{original_value}*", f"{original_value})(uid=byaknoexist"
+
+
+def detect_boolean_ldap(*, true_body: str, false_body: str, baseline_body: str) -> str | None:
+    """Compara respostas a um wildcard LDAP × um fechamento de filtro injetado.
+
+    Comportamento condicional (wildcard ≈ baseline, fechamento de filtro ≠
+    baseline) indica que o valor é concatenado sem escape num filtro LDAP
+    (``(uid=<valor>)``) — a assinatura booleana clássica, sem depender de
+    mensagem de erro visível.
+    """
+    if _similar_response(true_body, baseline_body) and not _similar_response(
+        false_body, baseline_body
+    ):
+        return (
+            'Resposta ao wildcard LDAP ("valor*") é semelhante ao baseline, mas '
+            'fechar o filtro e injetar um atributo inexistente ("valor)(uid='
+            'byaknoexist") resulta em resposta significativamente diferente — '
+            "comportamento condicional típico de LDAP injection."
+        )
+    return None
+
+
 @dataclass(frozen=True)
 class InjectionCheck:
     """Uma verificação de injeção de requisição única: payload → detector."""
@@ -301,6 +442,27 @@ def build_checks(token: str) -> list[InjectionCheck]:
             detect=_detect_ssrf,
             playbook_key="injection.ssrf",
         ),
+        InjectionCheck(
+            key="crlf",
+            title="Possível CRLF Injection / HTTP Response Splitting",
+            severity="high",
+            payload=CRLF_PAYLOAD,
+            description=(
+                "A injeção de uma sequência CRLF ('\\r\\n') seguida de um header "
+                "sintético no parâmetro resultou num header de resposta HTTP extra "
+                "e genuíno — o valor é concatenado sem sanitização num header de "
+                "resposta (ex.: Location, Set-Cookie), permitindo injetar headers "
+                "arbitrários ou, em alguns servidores, dividir a resposta em duas "
+                "(response splitting)."
+            ),
+            recommendation=(
+                "Nunca concatenar entrada do usuário diretamente em headers de "
+                "resposta; remover/rejeitar CR/LF da entrada e usar as APIs do "
+                "framework para setar headers (que normalmente já sanitizam)."
+            ),
+            detect=_detect_crlf_injection,
+            playbook_key="injection.crlf",
+        ),
     ]
 
 
@@ -320,13 +482,9 @@ def detect_boolean_sqli(*, true_body: str, false_body: str, baseline_body: str) 
     visível na resposta.
     """
 
-    def _similar(a: str, b: str) -> bool:
-        if not a and not b:
-            return True
-        longer = max(len(a), len(b), 1)
-        return abs(len(a) - len(b)) <= max(15, int(longer * 0.03))
-
-    if _similar(true_body, baseline_body) and not _similar(false_body, baseline_body):
+    if _similar_response(true_body, baseline_body) and not _similar_response(
+        false_body, baseline_body
+    ):
         return (
             "Resposta com condição sempre-verdadeira (\"1'='1\") é semelhante ao "
             "baseline, mas a condição sempre-falsa (\"1'='2\") resulta em resposta "

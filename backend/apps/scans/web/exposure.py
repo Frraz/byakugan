@@ -23,6 +23,12 @@ _PATH_PLAYBOOKS: tuple[tuple[str, str], ...] = (
     ("/.git", "exposure.git"),
     ("/.env", "exposure.env"),
     ("/actuator", "exposure.actuator"),
+    ("/swagger", "exposure.api-docs"),
+    ("/openapi", "exposure.api-docs"),
+    ("/api-docs", "exposure.api-docs"),
+    ("/v2/api-docs", "exposure.api-docs"),
+    ("/v3/api-docs", "exposure.api-docs"),
+    ("/api/swagger.json", "exposure.api-docs"),
 )
 
 
@@ -101,4 +107,67 @@ def classify_exposure(
             "web, mover para fora do webroot, ou exigir autenticação)."
         ),
         "playbook_key": _playbook_for_path(path),
+    }
+
+
+#: Marcadores que, juntos, confirmam que um corpo é de fato um source map
+#: (JSON com o formato da especificação), não apenas um 404 coincidente.
+_SOURCE_MAP_MARKERS = ('"version"', '"sources"', '"mappings"')
+
+
+def classify_source_map(
+    *,
+    script_url: str,
+    status_code: int,
+    body: str,
+    baseline_status: int,
+    baseline_body: str,
+) -> dict[str, Any] | None:
+    """Decide se o source map (``.js.map``) de um script rastreado está exposto.
+
+    Mesma lógica de baseline de ``classify_exposure`` (evita falso positivo em
+    servidores que respondem 200 para qualquer path), mais a verificação de
+    que o corpo é de fato um source map (não um HTML de erro customizado).
+    Um source map exposto revela o código-fonte original (não minificado) —
+    comentários, nomes de variáveis, lógica de negócio e, com frequência,
+    endpoints de API não documentados.
+    """
+    if status_code in (401, 403, 404, 429, 500, 501, 502, 503):
+        return None
+    if _looks_like_baseline(
+        status_code=status_code,
+        body=body,
+        baseline_status=baseline_status,
+        baseline_body=baseline_body,
+    ):
+        return None
+    if not all(marker in body for marker in _SOURCE_MAP_MARKERS):
+        return None
+
+    map_url = f"{script_url}.map" if not script_url.endswith(".map") else script_url
+    return {
+        "title": "Source map exposto revela código-fonte original",
+        "severity": "medium",
+        "category": "exposure",
+        "description": (
+            "Um arquivo de source map (.js.map) de um script da aplicação está "
+            "acessível publicamente — ele reconstrói o código JavaScript "
+            "original (não minificado), incluindo comentários, nomes de "
+            "variáveis/funções e, com frequência, lógica de negócio ou "
+            "endpoints de API que não deveriam ser visíveis no cliente."
+        ),
+        # Formato "URL: ... | Parâmetro: '...'" (mesmo contrato de todo finding
+        # web — ver ``exploit/base.py:parse_web_target``) para que o motor de
+        # exploração consiga derivar a URL do .map e baixá-lo de novo para
+        # extrair uma amostra do código-fonte vazado (``exploit/source_map.py``).
+        "evidence": (
+            f"URL: {map_url} | Parâmetro: '' | GET {map_url} → HTTP {status_code}, "
+            "corpo contém a estrutura de um source map válido."
+        ),
+        "recommendation": (
+            "Não publicar arquivos .map em produção (gerá-los só para uso "
+            "interno de debug, fora do webroot público) ou, no mínimo, "
+            "restringir o acesso a eles."
+        ),
+        "playbook_key": "exposure.source-map",
     }

@@ -90,6 +90,141 @@ def analyze_security_headers(headers: dict[str, str], *, is_https: bool) -> list
     return findings
 
 
+def _parse_csp(csp: str) -> dict[str, list[str]]:
+    """Parseia um header CSP em ``{diretiva: [fontes]}`` (minúsculas, sem I/O)."""
+    directives: dict[str, list[str]] = {}
+    for part in csp.split(";"):
+        tokens = part.strip().split()
+        if not tokens:
+            continue
+        directives[tokens[0].lower()] = [t.lower() for t in tokens[1:]]
+    return directives
+
+
+#: Origens que efetivamente permitem carregar script de **qualquer lugar** —
+#: um wildcard total ou um wildcard de esquema inteiro, ambos anulam a
+#: proteção da CSP contra origens de script maliciosas.
+_CSP_WILDCARD_SOURCES = ("*", "http:", "https:", "data:")
+
+
+def analyze_csp_quality(csp: str) -> list[dict[str, Any]]:
+    """Avalia a **qualidade** de uma CSP já presente (category ``web-headers``).
+
+    Complementar a ``analyze_security_headers`` (que só checa ausência/
+    presença): uma CSP tecnicamente presente, mas com diretivas fracas, não
+    oferece proteção real contra XSS/clickjacking — um achado comum e de
+    alto valor em pentest real. Opera só sobre o header já obtido no probe
+    base (nenhuma requisição extra).
+    """
+    directives = _parse_csp(csp)
+    if not directives:
+        return []
+
+    findings: list[dict[str, Any]] = []
+    script_src = directives.get("script-src", directives.get("default-src", []))
+    object_src = directives.get("object-src", directives.get("default-src", []))
+    frame_ancestors = directives.get("frame-ancestors")
+
+    if "'unsafe-inline'" in script_src:
+        findings.append(
+            _finding(
+                title="CSP permite scripts inline ('unsafe-inline')",
+                severity="high",
+                category="web-headers",
+                description=(
+                    "A Content-Security-Policy permite 'unsafe-inline' em "
+                    "script-src/default-src — isso anula a principal proteção da "
+                    "CSP contra XSS, já que o payload mais comum de XSS refletido/"
+                    "armazenado é justamente um script inline."
+                ),
+                evidence=f"CSP: '{csp}' — script-src/default-src inclui 'unsafe-inline'.",
+                recommendation=(
+                    "Remover 'unsafe-inline'; usar nonces (`'nonce-<valor>'`, gerado "
+                    "por requisição) ou hashes (`'sha256-<hash>'`) para scripts "
+                    "legítimos inline, ou migrar para arquivos .js externos."
+                ),
+                playbook_key="misconfig.weak-csp",
+            )
+        )
+    if "'unsafe-eval'" in script_src:
+        findings.append(
+            _finding(
+                title="CSP permite 'unsafe-eval'",
+                severity="medium",
+                category="web-headers",
+                description=(
+                    "A CSP permite 'unsafe-eval' em script-src/default-src — "
+                    "habilita `eval()`/`new Function()`, um vetor comum para "
+                    "escalar um XSS que já conseguiu injetar dados em execução de código."
+                ),
+                evidence=f"CSP: '{csp}' — script-src/default-src inclui 'unsafe-eval'.",
+                recommendation="Remover 'unsafe-eval'; refatorar o código que depende de eval()/new Function().",
+                playbook_key="misconfig.weak-csp",
+            )
+        )
+    if any(src in _CSP_WILDCARD_SOURCES for src in script_src):
+        findings.append(
+            _finding(
+                title="CSP permite scripts de qualquer origem",
+                severity="high",
+                category="web-headers",
+                description=(
+                    "O script-src/default-src da CSP inclui um wildcard total "
+                    "('*') ou um esquema inteiro (http:/https:/data:) como origem "
+                    "permitida — equivale a não ter restrição de origem alguma "
+                    "para scripts, tornando a CSP inútil contra XSS baseado em "
+                    "origem externa."
+                ),
+                evidence=f"CSP: '{csp}' — script-src/default-src inclui origem wildcard.",
+                recommendation=(
+                    "Restringir script-src a uma allowlist explícita dos domínios "
+                    "realmente usados (CDNs específicos, 'self'), nunca um "
+                    "wildcard total ou de esquema."
+                ),
+                playbook_key="misconfig.weak-csp",
+            )
+        )
+    if not object_src or "'none'" not in object_src:
+        findings.append(
+            _finding(
+                title="CSP não restringe object-src",
+                severity="low",
+                category="web-headers",
+                description=(
+                    "A CSP não define object-src 'none' (nem via default-src) — "
+                    "plugins legados (Flash/Java applets/Silverlight) embutidos "
+                    "via <object>/<embed> continuam um vetor possível, mesmo "
+                    "residual, em navegadores/ambientes mais antigos."
+                ),
+                evidence=f"CSP: '{csp}' — object-src ausente ou não restrito a 'none'.",
+                recommendation="Adicionar object-src 'none' à CSP (quase nenhum site moderno precisa de plugins).",
+                playbook_key="misconfig.weak-csp",
+            )
+        )
+    if frame_ancestors is None:
+        findings.append(
+            _finding(
+                title="CSP não define frame-ancestors",
+                severity="medium",
+                category="web-headers",
+                description=(
+                    "A CSP não define frame-ancestors — diferente das demais "
+                    "diretivas, frame-ancestors **não** cai para default-src, "
+                    "então sua ausência deixa a proteção contra clickjacking "
+                    "dependendo só do X-Frame-Options (se presente)."
+                ),
+                evidence=f"CSP: '{csp}' — diretiva frame-ancestors não encontrada.",
+                recommendation=(
+                    "Adicionar frame-ancestors 'self' (ou 'none') à CSP — é o "
+                    "mecanismo moderno de proteção contra clickjacking, e não "
+                    "depende de suporte legado como X-Frame-Options."
+                ),
+                playbook_key="misconfig.weak-csp",
+            )
+        )
+    return findings
+
+
 def analyze_cookies(cookies: list[dict[str, Any]], *, is_https: bool) -> list[dict[str, Any]]:
     """Reporta cookies sem Secure/HttpOnly/SameSite adequados (category ``cookie``).
 

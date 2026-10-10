@@ -1109,6 +1109,279 @@ def test_web_scan_reports_cors_misconfiguration(monkeypatch):
     assert cors_findings[0].data["severity"] == "high"
 
 
+def test_web_scan_detects_host_header_injection(monkeypatch):
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            host = (headers or {}).get("Host")
+            if host and "byakugan-hhi-probe" in host:
+                return 302, {"Location": f"https://{host}/reset"}, "", [], 0.02
+            return 200, {"Content-Type": "text/html"}, "<html>home</html>", [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "injection.host-header"]
+    assert len(findings) == 1
+
+
+def test_web_scan_detects_graphql_introspection(monkeypatch):
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, "<html>home</html>", [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        if parts.path == "/graphql":
+            body = '{"data":{"__schema":{"queryType":{"name":"Query"}}}}'
+            return 200, {}, body, [], 0.05
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [
+        r for r in results if r.data.get("playbook_key") == "exposure.graphql-introspection"
+    ]
+    assert len(findings) == 1
+
+
+def test_web_scan_detects_missing_csrf_token(monkeypatch):
+    home_html = (
+        '<html><body><form action="/transfer" method="POST">'
+        '<input name="amount"><input name="to"></form></body></html>'
+    )
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "access-control.csrf"]
+    assert len(findings) == 1
+    assert "http://testsite.local:80/transfer" in findings[0].data["evidence"]
+
+
+def test_web_scan_detects_exposed_source_map(monkeypatch):
+    home_html = '<html><body><script src="/static/app.js"></script></body></html>'
+    map_body = '{"version":3,"sources":["app.jsx"],"names":[],"mappings":"AAAA"}'
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        if parts.path == "/static/app.js.map":
+            return 200, {}, map_body, [], 0.05
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "exposure.source-map"]
+    assert len(findings) == 1
+
+
+def test_web_scan_detects_weak_jwt_in_page_body(monkeypatch):
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def _b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header_b64 = _b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload_b64 = _b64url(json.dumps({"sub": "1", "exp": 99999999999}).encode())
+    signature = hmac.new(b"secret", f"{header_b64}.{payload_b64}".encode(), hashlib.sha256).digest()
+    token = f"{header_b64}.{payload_b64}.{_b64url(signature)}"
+    home_html = f'<html><body>window.token = "{token}";</body></html>'
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "auth.jwt-weak"]
+    assert len(findings) == 1
+    assert "secret" in findings[0].data["evidence"]
+    # A URL da página onde o token foi visto vai na evidência — é o que dá ao
+    # motor de exploração (JwtWeakExploit) a coordenada para reenviar um token forjado.
+    assert findings[0].data["evidence"].startswith("URL: http://testsite.local:80/")
+
+
+def test_web_scan_detects_crlf_injection(monkeypatch):
+    home_html = '<html><body><a href="/echo?msg=hi">Echo</a></body></html>'
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import parse_qs, urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        if parts.path == "/echo":
+            msg = parse_qs(parts.query).get("msg", [""])[0]
+            resp_headers = {}
+            if "x-byakugan-crlf" in msg.lower():
+                resp_headers["X-Byakugan-Crlf"] = "injected"
+            return 200, resp_headers, f"<html>echo: {msg}</html>", [], 0.05
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "injection.crlf"]
+    assert len(findings) == 1
+
+
+def test_web_scan_detects_cloud_storage_reference(monkeypatch):
+    home_html = (
+        '<html><body><img src="https://my-assets.s3.amazonaws.com/logo.png">' "</body></html>"
+    )
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [
+        r for r in results if r.data.get("playbook_key") == "exposure.cloud-storage-reference"
+    ]
+    assert len(findings) == 1
+    assert "my-assets.s3.amazonaws.com" in findings[0].data["evidence"]
+
+
+def test_web_scan_detects_weak_csp(monkeypatch):
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            resp_headers = {
+                "Content-Type": "text/html",
+                "Content-Security-Policy": "script-src 'self' 'unsafe-inline'",
+            }
+            return 200, resp_headers, "<html>home</html>", [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "misconfig.weak-csp"]
+    assert len(findings) >= 1
+    assert any("unsafe-inline" in f.data["title"] for f in findings)
+
+
 def test_web_scan_skips_unreachable_ports(monkeypatch):
     monkeypatch.setattr(WebScanAdapter, "_fetch", lambda self, url, **kwargs: None)
     context = ScanContext(
@@ -1169,7 +1442,11 @@ def test_web_scan_caps_injection_points(monkeypatch):
             params = parse_qs(parts.query)
             for name, values in params.items():
                 if values and values[0] != "1":  # "1" é o valor original do crawl
-                    injected_params.add(name)
+                    # NoSQLi testa a MESMA injection point renomeando a chave
+                    # para "param[$ne]"/"param[$eq]" — normaliza de volta ao
+                    # nome base do parâmetro para contar pontos, não chaves.
+                    base_name = name.split("[", 1)[0]
+                    injected_params.add(base_name)
             return 200, {}, "page content", [], 0.01
         return 404, {}, "Not Found", [], 0.01
 

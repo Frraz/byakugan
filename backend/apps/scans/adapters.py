@@ -1355,19 +1355,25 @@ WEB_MAX_BODY_CHARS = 200_000
 #: Domínio reservado (RFC 2606, nunca resolve) usado para testar CORS.
 CORS_PROBE_ORIGIN = "https://byakugan-cors-probe.invalid"
 #: Máximo de pontos de injeção (url, parâmetro) testados por origem — cada
-#: um gera várias requisições (7 checks + booleana + eventualmente time-based);
-#: sem este teto, um site com muitos parâmetros tornaria o scan impraticável.
+#: um gera várias requisições (9 checks de requisição única + 3 pares
+#: booleanos SQLi/NoSQLi/LDAP + eventualmente time-based); sem este teto, um
+#: site com muitos parâmetros tornaria o scan impraticável.
 MAX_INJECTION_POINTS = 15
+#: Máximo de tokens JWT únicos analisados por origem (decodificação local,
+#: sem rede — o teto existe só para manter o custo de CPU previsível).
+MAX_JWT_CANDIDATES = 20
 
 
 class WebScanAdapter(ScannerAdapter):
-    """Orquestra web application active testing: crawl → passive → exposure → methods → injection.
+    """Orquestra web application active testing: crawl → passive → exposure → access
+    control (forced browsing + host header + GraphQL) → auth/JWT/CSRF/source maps → injection.
 
-    Único ponto de entrada para todo o teste ativo de aplicação web da Fase
-    4 — o crawl é feito uma vez por origem e reaproveitado por todas as
-    checagens. Cada porta HTTP(S) comum aberta é tratada como uma origem
-    independente. Tudo não-destrutivo: só GET/OPTIONS/TRACE, marcadores
-    inertes em vez de payloads executáveis (``web/injection.py``), sem
+    Único ponto de entrada para todo o teste ativo de aplicação web — o
+    crawl é feito uma vez por origem e reaproveitado por todas as checagens.
+    Cada porta HTTP(S) comum aberta é tratada como uma origem independente.
+    Tudo não-destrutivo: só GET/OPTIONS/TRACE, marcadores inertes em vez de
+    payloads executáveis (``web/injection.py``), CSRF/JWT analisados sem
+    nenhuma requisição extra (dados já coletados pelo crawl), sem
     escrita/upload/delete — ver docstrings de cada submódulo em ``web/``
     para o raciocínio de segurança de cada probe.
     """
@@ -1495,6 +1501,12 @@ class WebScanAdapter(ScannerAdapter):
 
         for finding in web.passive.analyze_security_headers(headers, is_https=is_https):
             results.append(self._make_finding(finding, target=target, ip=ip))
+        csp_header = headers.get("Content-Security-Policy") or headers.get(
+            "content-security-policy"
+        )
+        if csp_header:
+            for finding in web.passive.analyze_csp_quality(csp_header):
+                results.append(self._make_finding(finding, target=target, ip=ip))
         for finding in web.passive.analyze_cookies(cookies, is_https=is_https):
             results.append(self._make_finding(finding, target=target, ip=ip))
         listing_finding = web.passive.analyze_directory_listing(base_url, body)
@@ -1540,6 +1552,168 @@ class WebScanAdapter(ScannerAdapter):
             if trace_finding:
                 results.append(self._make_finding(trace_finding, target=target, ip=ip))
 
+        return results
+
+    def _run_host_header_injection(
+        self, base_url: str, target: str, ip: str | None
+    ) -> list[RawResult]:
+        """Host Header Injection (A03/A05, CWE-20): um único GET idempotente.
+
+        Envia o mesmo GET à home, mas com o header ``Host`` substituído por um
+        domínio de teste reservado (nunca resolve de verdade) — se o backend
+        confiar nesse header para montar links absolutos, ele reflete no
+        ``Location`` do redirect ou no corpo da resposta.
+        """
+        from . import web
+
+        results: list[RawResult] = []
+        probed = self._fetch(
+            base_url,
+            headers={"Host": web.injection.HOST_HEADER_MARKER},
+            allow_redirects=False,
+        )
+        if probed is None:
+            return results
+        status, headers, body, _, _ = probed
+        evidence = web.injection.detect_host_header_reflection(
+            status_code=status, headers=headers, body=body
+        )
+        if evidence:
+            finding = {
+                "title": "Possível Host Header Injection",
+                "severity": "medium",
+                "category": "injection",
+                "description": (
+                    "O servidor reflete o header 'Host' recebido do cliente em "
+                    "vez de usar sua própria configuração — um atacante pode "
+                    "injetar um domínio arbitrário nesse header para envenenar "
+                    "links absolutos (ex.: reset de senha) ou caches intermediários."
+                ),
+                "evidence": f"URL: {base_url} | Parâmetro: 'Host' (header) | {evidence}",
+                "recommendation": (
+                    "Validar o header Host contra uma allowlist de domínios "
+                    "esperados no servidor web/load balancer, e nunca usá-lo "
+                    "diretamente para montar URLs absolutas na aplicação."
+                ),
+                "playbook_key": "injection.host-header",
+            }
+            results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
+    def _run_graphql(self, base_url: str, target: str, ip: str | None) -> list[RawResult]:
+        """Introspecção GraphQL exposta (A05/A02, CWE-215) — só GET idempotente."""
+        from urllib.parse import urljoin
+
+        from . import web
+
+        results: list[RawResult] = []
+        for path in web.graphql_checks.GRAPHQL_PATHS:
+            url = web.graphql_checks.build_introspection_url(base_url, path)
+            probed = self._fetch(url)
+            if probed is None:
+                continue
+            status, _, body, _, _ = probed
+            finding = web.graphql_checks.classify_introspection(
+                url=urljoin(base_url, path), status_code=status, body=body
+            )
+            if finding:
+                results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
+    def _run_source_maps(
+        self, crawl_result: Any, base_url: str, target: str, ip: str | None
+    ) -> list[RawResult]:
+        """Exposição de source maps (A05/A02, CWE-540) a partir dos scripts rastreados."""
+        from urllib.parse import urljoin
+
+        from . import web
+
+        results: list[RawResult] = []
+        random_path = f"/byakugan-{secrets.token_hex(8)}-notfound.js.map"
+        baseline_probed = self._fetch(urljoin(base_url, random_path))
+        baseline_status, baseline_body = (
+            (baseline_probed[0], baseline_probed[2]) if baseline_probed else (404, "")
+        )
+
+        seen: set[str] = set()
+        for script_url in crawl_result.scripts:
+            if not script_url.endswith(".js") or script_url in seen:
+                continue
+            seen.add(script_url)
+            map_url = f"{script_url}.map"
+            probed = self._fetch(map_url)
+            if probed is None:
+                continue
+            status, _, body, _, _ = probed
+            finding = web.exposure.classify_source_map(
+                script_url=script_url,
+                status_code=status,
+                body=body,
+                baseline_status=baseline_status,
+                baseline_body=baseline_body,
+            )
+            if finding:
+                results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
+    def _run_csrf(self, crawl_result: Any, target: str, ip: str | None) -> list[RawResult]:
+        """CSRF (A01, CWE-352): puramente estático sobre os formulários já rastreados."""
+        from . import web
+
+        results: list[RawResult] = []
+        seen: set[str] = set()
+        for form in crawl_result.forms:
+            key = f"{form['action']}|{form['method']}|{sorted(form['inputs'])}"
+            if key in seen:
+                continue
+            seen.add(key)
+            finding = web.csrf.detect_missing_csrf_token(form=form)
+            if finding:
+                results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
+    def _run_jwt(self, crawl_result: Any, target: str, ip: str | None) -> list[RawResult]:
+        """JWT fraco (A07, CWE-347): decodificação local de tokens já vistos no crawl.
+
+        Nenhuma requisição extra — os corpos das páginas já foram obtidos
+        pelo crawler. Limita a análise aos primeiros tokens únicos
+        encontrados para manter o custo previsível em sites com muitas páginas.
+        """
+        from . import web
+
+        results: list[RawResult] = []
+        seen: set[str] = set()
+        for page in crawl_result.pages:
+            for token in web.auth_checks.find_jwt_candidates(page.body):
+                if token in seen:
+                    continue
+                seen.add(token)
+                if len(seen) > MAX_JWT_CANDIDATES:
+                    return results
+                finding = web.auth_checks.analyze_jwt(token, source_url=page.url)
+                if finding:
+                    results.append(self._make_finding(finding, target=target, ip=ip))
+        return results
+
+    def _run_cloud_storage(self, crawl_result: Any, target: str, ip: str | None) -> list[RawResult]:
+        """Referências a cloud storage (A05, CWE-200) — puramente passivo, sem rede.
+
+        Nunca requisita o bucket/container encontrado (host de terceiros fora
+        do ``authorization_scope` do alvo — RN007/RN017 fail-closed); só
+        reporta a referência para verificação manual. Ver docstring de
+        ``web/cloud_exposure.py``.
+        """
+        from . import web
+
+        results: list[RawResult] = []
+        seen: set[str] = set()
+        for page in crawl_result.pages:
+            for url in web.cloud_exposure.find_cloud_storage_urls(page.body):
+                if url in seen:
+                    continue
+                seen.add(url)
+                finding = web.cloud_exposure.classify_cloud_storage_reference(url)
+                results.append(self._make_finding(finding, target=target, ip=ip))
         return results
 
     def _run_exposure(self, base_url: str, target: str, ip: str | None) -> list[RawResult]:
@@ -1735,6 +1909,72 @@ class WebScanAdapter(ScannerAdapter):
                     }
                     results.append(self._make_finding(finding, target=target, ip=ip))
 
+            nosqli_probe_value = f"byknosqli{secrets.token_hex(4)}"
+            bypass_probed = self._fetch(
+                web.injection.build_nosqli_injected_url(url, param, "$ne", nosqli_probe_value)
+            )
+            exact_probed = self._fetch(
+                web.injection.build_nosqli_injected_url(url, param, "$eq", nosqli_probe_value)
+            )
+            if bypass_probed and exact_probed:
+                evidence = web.injection.detect_boolean_nosqli(
+                    bypass_body=bypass_probed[2],
+                    exact_body=exact_probed[2],
+                    baseline_body=baseline_body,
+                )
+                if evidence:
+                    finding = {
+                        "title": "Possível NoSQL injection (booleana)",
+                        "severity": "critical",
+                        "category": "injection",
+                        "description": (
+                            "A resposta do serviço muda de forma consistente ao "
+                            "injetar operadores de consulta MongoDB ($ne/$eq) como "
+                            "chave de query string — indício de que o valor é usado "
+                            "diretamente numa consulta NoSQL sem validação de tipo."
+                        ),
+                        "evidence": f"URL: {url} | Parâmetro: '{param}' | {evidence}",
+                        "recommendation": (
+                            "Validar o tipo/schema de toda entrada antes de usá-la "
+                            "numa consulta NoSQL (nunca aceitar objetos/operadores "
+                            "vindos da query string sem allowlist de campos)."
+                        ),
+                        "playbook_key": "injection.nosqli",
+                    }
+                    results.append(self._make_finding(finding, target=target, ip=ip))
+
+            ldap_true, ldap_false = web.injection.ldap_boolean_payloads(original_value)
+            ldap_true_probed = self._fetch(web.injection.build_injected_url(url, param, ldap_true))
+            ldap_false_probed = self._fetch(
+                web.injection.build_injected_url(url, param, ldap_false)
+            )
+            if ldap_true_probed and ldap_false_probed:
+                evidence = web.injection.detect_boolean_ldap(
+                    true_body=ldap_true_probed[2],
+                    false_body=ldap_false_probed[2],
+                    baseline_body=baseline_body,
+                )
+                if evidence:
+                    finding = {
+                        "title": "Possível LDAP injection (booleana)",
+                        "severity": "critical",
+                        "category": "injection",
+                        "description": (
+                            "A resposta do serviço muda de forma consistente com um "
+                            "wildcard LDAP e um fechamento de filtro injetados no "
+                            "parâmetro — indício de que o valor é concatenado sem "
+                            "escape num filtro LDAP."
+                        ),
+                        "evidence": f"URL: {url} | Parâmetro: '{param}' | {evidence}",
+                        "recommendation": (
+                            "Escapar caracteres especiais de LDAP (RFC 4515) antes de "
+                            "montar qualquer filtro, ou usar uma biblioteca que "
+                            "parametrize o filtro em vez de concatenar strings."
+                        ),
+                        "playbook_key": "injection.ldap",
+                    }
+                    results.append(self._make_finding(finding, target=target, ip=ip))
+
             if intensity == "aggressive":
                 for payload in (
                     *web.injection.TIME_BASED_SQLI_PAYLOADS[:1],
@@ -1792,6 +2032,10 @@ class WebScanAdapter(ScannerAdapter):
             results.extend(self._run_exposure(base_url, target, ip))
             context.check_cancelled()
             results.extend(self._run_access_control(base_url, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_host_header_injection(base_url, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_graphql(base_url, target, ip))
 
             context.check_cancelled()
             from .web.crawler import Crawler
@@ -1810,6 +2054,14 @@ class WebScanAdapter(ScannerAdapter):
 
             context.check_cancelled()
             results.extend(self._run_auth(crawl_result, base_url, target, ip, is_https))
+            context.check_cancelled()
+            results.extend(self._run_jwt(crawl_result, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_csrf(crawl_result, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_source_maps(crawl_result, base_url, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_cloud_storage(crawl_result, target, ip))
 
             context.check_cancelled()
             results.extend(self._run_injection(crawl_result, base_url, target, ip, intensity))

@@ -5,6 +5,7 @@ from __future__ import annotations
 from apps.scans.web.passive import (
     analyze_cookies,
     analyze_cors,
+    analyze_csp_quality,
     analyze_directory_listing,
     analyze_security_headers,
 )
@@ -56,6 +57,80 @@ def test_all_findings_are_rn008_complete():
         assert f["evidence"].strip()
         assert f["recommendation"].strip()
         assert f["category"] == "web-headers"
+
+
+# --- CSP quality ----------------------------------------------------------
+
+
+def test_csp_empty_string_produces_no_findings():
+    assert analyze_csp_quality("") == []
+
+
+def test_csp_strong_produces_no_findings():
+    csp = "default-src 'self'; object-src 'none'; frame-ancestors 'self'"
+    assert analyze_csp_quality(csp) == []
+
+
+def test_csp_unsafe_inline_flagged():
+    csp = "script-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'self'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("unsafe-inline" in t for t in titles)
+
+
+def test_csp_unsafe_eval_flagged():
+    csp = "script-src 'self' 'unsafe-eval'; object-src 'none'; frame-ancestors 'self'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("unsafe-eval" in t for t in titles)
+
+
+def test_csp_wildcard_script_src_flagged():
+    csp = "script-src *; object-src 'none'; frame-ancestors 'self'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("qualquer origem" in t for t in titles)
+
+
+def test_csp_scheme_wildcard_flagged():
+    csp = "default-src https:; object-src 'none'; frame-ancestors 'self'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("qualquer origem" in t for t in titles)
+
+
+def test_csp_missing_object_src_flagged():
+    csp = "script-src 'self'; frame-ancestors 'self'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("object-src" in t for t in titles)
+
+
+def test_csp_missing_frame_ancestors_flagged():
+    csp = "script-src 'self'; object-src 'none'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("frame-ancestors" in t for t in titles)
+
+
+def test_csp_default_src_fallback_used_for_script_and_object():
+    # Sem script-src/object-src explícitos, ambos caem para default-src — uma
+    # default-src com 'unsafe-inline' e sem 'none' deve acusar os dois problemas.
+    csp = "default-src 'self' 'unsafe-inline'; frame-ancestors 'self'"
+    findings = analyze_csp_quality(csp)
+    titles = {f["title"] for f in findings}
+    assert any("unsafe-inline" in t for t in titles)
+    assert any("object-src" in t for t in titles)
+
+
+def test_csp_quality_findings_are_rn008_complete():
+    csp = "script-src *"
+    for f in analyze_csp_quality(csp):
+        assert f["description"].strip()
+        assert f["evidence"].strip()
+        assert f["recommendation"].strip()
+        assert f["category"] == "web-headers"
+        assert f["playbook_key"] == "misconfig.weak-csp"
 
 
 # --- cookies ------------------------------------------------------------

@@ -30,12 +30,15 @@ SAMPLE_HTML = """
 <form>
   <input name="noaction">
 </form>
+<script src="/static/app.js"></script>
+<script src="https://cdn.example.com/lib.js"></script>
+<script>console.log("inline")</script>
 </body></html>
 """
 
 
 def test_extract_links_resolves_relative_and_filters_non_http_schemes():
-    links, _ = extract_links_and_forms("https://empresa.com/home", SAMPLE_HTML)
+    links, _, _ = extract_links_and_forms("https://empresa.com/home", SAMPLE_HTML)
     assert "https://empresa.com/about" in links
     assert "https://empresa.com/product?id=5&cat=shoes" in links
     assert "https://external.com/x" in links  # extraído; filtro de origem é externo
@@ -46,7 +49,7 @@ def test_extract_links_resolves_relative_and_filters_non_http_schemes():
 
 
 def test_extract_forms_captures_action_method_and_named_inputs():
-    _, forms = extract_links_and_forms("https://empresa.com/home", SAMPLE_HTML)
+    _, forms, _ = extract_links_and_forms("https://empresa.com/home", SAMPLE_HTML)
     assert len(forms) == 3
 
     search_form = next(f for f in forms if f["action"] == "https://empresa.com/search")
@@ -61,9 +64,15 @@ def test_extract_forms_captures_action_method_and_named_inputs():
     assert noaction_form["action"] == "https://empresa.com/home"
 
 
+def test_extract_scripts_resolves_relative_and_ignores_inline():
+    _, _, scripts = extract_links_and_forms("https://empresa.com/home", SAMPLE_HTML)
+    assert scripts == ["https://empresa.com/static/app.js", "https://cdn.example.com/lib.js"]
+
+
 def test_extract_links_and_forms_survives_malformed_html():
     assert extract_links_and_forms("https://x.com/", "<html><a href='/a'<body>") == (
         ["https://x.com/a"],
+        [],
         [],
     )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from apps.scans.web.exposure import classify_exposure
+from apps.scans.web.exposure import classify_exposure, classify_source_map
 
 BASELINE_404 = {"baseline_status": 404, "baseline_body": "Not Found"}
 
@@ -96,3 +96,67 @@ def test_finding_is_rn008_complete():
     assert finding["evidence"].strip()
     assert finding["recommendation"].strip()
     assert "/.env" in finding["evidence"]
+
+
+# --- Source map exposure -------------------------------------------------
+
+SOURCE_MAP_BODY = '{"version":3,"sources":["app.jsx"],"names":[],"mappings":"AAAA","file":"app.js"}'
+
+
+def test_source_map_exposed_when_body_has_valid_structure():
+    finding = classify_source_map(
+        script_url="https://t/static/app.js",
+        status_code=200,
+        body=SOURCE_MAP_BODY,
+        **BASELINE_404,
+    )
+    assert finding is not None
+    assert finding["playbook_key"] == "exposure.source-map"
+    assert "app.js.map" in finding["evidence"]
+
+
+def test_source_map_not_flagged_without_map_structure():
+    assert (
+        classify_source_map(
+            script_url="https://t/static/app.js",
+            status_code=200,
+            body="<html>404 custom page</html>",
+            **BASELINE_404,
+        )
+        is None
+    )
+
+
+def test_swagger_json_exposed_gets_api_docs_playbook():
+    finding = classify_exposure(
+        path="/swagger.json",
+        signature='"swagger"',
+        status_code=200,
+        body='{"swagger": "2.0", "paths": {}}',
+        **BASELINE_404,
+    )
+    assert finding is not None
+    assert finding["playbook_key"] == "exposure.api-docs"
+
+
+def test_v3_api_docs_exposed_gets_api_docs_playbook():
+    finding = classify_exposure(
+        path="/v3/api-docs",
+        signature='"openapi"',
+        status_code=200,
+        body='{"openapi": "3.0.0", "paths": {}}',
+        **BASELINE_404,
+    )
+    assert finding is not None
+    assert finding["playbook_key"] == "exposure.api-docs"
+
+
+def test_source_map_not_flagged_when_matches_baseline():
+    finding = classify_source_map(
+        script_url="https://t/static/app.js",
+        status_code=404,
+        body="Not Found",
+        baseline_status=404,
+        baseline_body="Not Found",
+    )
+    assert finding is None

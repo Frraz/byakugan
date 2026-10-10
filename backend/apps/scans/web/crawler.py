@@ -25,18 +25,21 @@ _IGNORED_LINK_SCHEMES = ("javascript:", "mailto:", "tel:", "data:")
 
 
 class _LinkFormExtractor(HTMLParser):
-    """Extrai ``<a href>`` e ``<form>`` (com inputs/select/textarea nomeados)."""
+    """Extrai ``<a href>``, ``<form>`` (com inputs/select/textarea nomeados) e ``<script src>``."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.links: list[str] = []
         self.forms: list[dict[str, Any]] = []
+        self.scripts: list[str] = []
         self._current_form: dict[str, Any] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_dict = {k.lower(): v for k, v in attrs if v is not None}
         if tag == "a" and attr_dict.get("href"):
             self.links.append(attr_dict["href"])
+        elif tag == "script" and attr_dict.get("src"):
+            self.scripts.append(attr_dict["src"])
         elif tag == "form":
             self._current_form = {
                 "action": attr_dict.get("action", ""),
@@ -54,17 +57,21 @@ class _LinkFormExtractor(HTMLParser):
             self._current_form = None
 
 
-def extract_links_and_forms(base_url: str, html: str) -> tuple[list[str], list[dict[str, Any]]]:
-    """Extrai links absolutos e formulários (action absoluta) de uma página HTML.
+def extract_links_and_forms(
+    base_url: str, html: str
+) -> tuple[list[str], list[dict[str, Any]], list[str]]:
+    """Extrai links, formulários e scripts (``<script src>``) de uma página HTML.
 
     Args:
-        base_url: URL da página (usada para resolver hrefs/actions relativos).
+        base_url: URL da página (usada para resolver hrefs/actions/src relativos).
         html: Corpo HTML já obtido (esta função não faz I/O).
 
     Returns:
-        ``(links, forms)`` — ``links`` é uma lista de URLs absolutas (exclui
-        ``javascript:``/``mailto:``/``tel:``/``data:``); ``forms`` é uma
-        lista de ``{"action", "method", "inputs"}``.
+        ``(links, forms, scripts)`` — ``links`` é uma lista de URLs absolutas
+        (exclui ``javascript:``/``mailto:``/``tel:``/``data:``); ``forms`` é
+        uma lista de ``{"action", "method", "inputs"}``; ``scripts`` é uma
+        lista de URLs absolutas de arquivos JS referenciados (usada pela
+        checagem de exposição de source maps — ``web.exposure``).
     """
     parser = _LinkFormExtractor()
     try:
@@ -85,7 +92,12 @@ def extract_links_and_forms(base_url: str, html: str) -> tuple[list[str], list[d
         }
         for form in parser.forms
     ]
-    return links, forms
+    scripts = [
+        urljoin(base_url, src)
+        for src in parser.scripts
+        if not src.lower().startswith(_IGNORED_LINK_SCHEMES)
+    ]
+    return links, forms, scripts
 
 
 def is_same_origin(url: str, base_url: str) -> bool:
@@ -111,10 +123,13 @@ class Page:
 
 @dataclass
 class CrawlResult:
-    """Resultado agregado do crawl: páginas visitadas e formulários encontrados."""
+    """Resultado agregado do crawl: páginas visitadas, formulários e scripts encontrados."""
 
     pages: list[Page] = field(default_factory=list)
     forms: list[dict[str, Any]] = field(default_factory=list)
+    #: URLs absolutas de arquivos JS referenciados (``<script src>``) —
+    #: usadas pela checagem de exposição de source maps (``web.exposure``).
+    scripts: list[str] = field(default_factory=list)
 
 
 class Crawler:
@@ -195,8 +210,9 @@ class Crawler:
             if status >= 400 or "text/html" not in content_type:
                 continue
 
-            links, forms = extract_links_and_forms(url, body)
+            links, forms, scripts = extract_links_and_forms(url, body)
             result.forms.extend(forms)
+            result.scripts.extend(scripts)
             for link in links:
                 clean_link = link.split("#")[0]
                 if clean_link not in visited and is_same_origin(clean_link, start_url):
