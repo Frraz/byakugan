@@ -241,7 +241,7 @@ class ScanSerializer(serializers.ModelSerializer):
     def get_exploitable_findings_count(self, obj: Scan) -> int:
         """Quantos findings do scan têm um módulo de exploração automatizado.
 
-        Fonte única: ``exploit.registry.MODULES_BY_KEY`` (as 11 classes com
+        Fonte única: ``exploit.registry.MODULES_BY_KEY`` (as classes com
         exploit). É o que o botão "Explorar" pode de fato tentar provar — o
         frontend usa para avisar quando o scan não tem findings exploráveis.
         """
