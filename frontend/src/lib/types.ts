@@ -119,6 +119,8 @@ export type TechnologyCategory =
   | "cms"
   | "database"
   | "tls"
+  | "waf"
+  | "cdn"
   | "other";
 
 export type Confidence = "high" | "medium" | "low";
@@ -192,7 +194,10 @@ export type FindingCategory =
   | "cors"
   | "exposure"
   | "http-method"
-  | "injection";
+  | "injection"
+  | "access-control"
+  | "auth"
+  | "integrity";
 
 // --- Correlação & triagem (Fase 5) ---
 

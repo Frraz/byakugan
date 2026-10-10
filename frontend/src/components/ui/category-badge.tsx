@@ -19,6 +19,9 @@ const LABELS: Record<FindingCategory, string> = {
   exposure: "Exposição",
   "http-method": "Método HTTP",
   injection: "Injeção",
+  "access-control": "Controle de acesso",
+  auth: "Autenticação",
+  integrity: "Integridade de software/dados",
 };
 
 /** Rótulo amigável de uma categoria — cai no valor bruto se fora do enum conhecido. */
