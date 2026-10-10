@@ -47,7 +47,9 @@ class Technology(BaseModel):
     """Tecnologia identificada num ativo pelo fingerprinting (Fase 2).
 
     Compõe o *technology profile* do ambiente: sistema operacional, servidor
-    web, framework, linguagem, tecnologia de frontend, CMS, banco ou TLS.
+    web, framework, linguagem, tecnologia de frontend, CMS, banco, TLS ou
+    WAF/CDN (``signatures.py:_match_waf_cdn`` — contextualiza possíveis
+    falsos negativos de injeção: um WAF pode estar filtrando os probes).
     Cada entrada guarda a evidência que a sustentou (RN008 — nada sem contexto).
     """
 
@@ -60,6 +62,8 @@ class Technology(BaseModel):
         CMS = "cms", "CMS"
         DATABASE = "database", "Banco de dados"
         TLS = "tls", "TLS"
+        WAF = "waf", "Web Application Firewall"
+        CDN = "cdn", "CDN"
         OTHER = "other", "Outro"
 
     class Confidence(models.TextChoices):
