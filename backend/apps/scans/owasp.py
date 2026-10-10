@@ -112,6 +112,9 @@ CLASS_TO_OWASP: dict[str, tuple[str, str, str]] = {
     "crypto.sensitive-data-in-url": ("A02", "A04", "CWE-598"),
     # --- Software & Data Integrity Failures (A08 nas duas edições) — Fase B ---
     "integrity.missing-sri": ("A08", "A08", "CWE-353"),
+    "integrity.java-deserialization": ("A08", "A08", "CWE-502"),
+    "integrity.php-object-injection": ("A08", "A08", "CWE-502"),
+    "integrity.viewstate-exposed": ("A08", "A08", "CWE-502"),
     # Componentes desatualizados: A06:2021 → A03:2025 (Software Supply Chain).
     "integrity.vulnerable-js": ("A06", "A03", "CWE-1104"),
     # --- Security Misconfiguration extra (A05:2021 → A02:2025) — Fase B ---
@@ -202,6 +205,9 @@ ADAPTER_TESTED_CLASSES: dict[str, list[str]] = {
         "auth.jwt-weak",
         "integrity.missing-sri",
         "integrity.vulnerable-js",
+        "integrity.java-deserialization",
+        "integrity.php-object-injection",
+        "integrity.viewstate-exposed",
         "crypto.cleartext-credentials",
         "crypto.mixed-content",
         "misconfig.debug-mode",

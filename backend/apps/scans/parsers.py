@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from apps.assets.models import Asset, DnsRecord, Service, Technology
 
 from .adapters import RawResult
+from .mitre import resolve_mitre
 from .models import Finding, Scan, Vulnerability
 from .owasp import resolve_owasp
 
@@ -252,6 +253,11 @@ def persist_findings(scan: Scan, raw_results: list[RawResult]) -> FindingsSummar
         # playbook_key/category; a classificação (2021/2025/CWE) é derivada da
         # fonte única (apps/scans/owasp.py), nunca espalhada pelos detectores.
         owasp_2021, owasp_2025, cwe = resolve_owasp(playbook_key=playbook_key, category=category)
+        # Mesmo enriquecimento central, terceira dimensão (MITRE ATT&CK) —
+        # só por playbook_key: category é granularidade demais para uma
+        # técnica de ataque específica (ao contrário de OWASP, que tem
+        # fallback por category).
+        mitre_technique, _ = resolve_mitre(playbook_key)
         Finding.objects.create(
             scan=scan,
             asset=asset,
@@ -270,6 +276,7 @@ def persist_findings(scan: Scan, raw_results: list[RawResult]) -> FindingsSummar
             owasp_2021=owasp_2021,
             owasp_2025=owasp_2025,
             cwe=cwe,
+            mitre_technique=mitre_technique,
         )
         summary.findings += 1
 

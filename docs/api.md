@@ -129,7 +129,7 @@ Lista as tecnologias identificadas no ativo pelo fingerprinting (*technology pro
   "confidence": "high"
 }
 ```
-> `category`: `os` · `web-server` · `framework` · `language` · `frontend` · `cms` · `database` · `tls` · `other`. O detalhe do ativo (`GET /api/assets/{id}/`) já inclui `technologies` aninhadas.
+> `category`: `os` · `web-server` · `framework` · `language` · `frontend` · `cms` · `database` · `tls` · `waf` · `cdn` · `other`. `waf`/`cdn` (Cloudflare, Akamai, CloudFront, Sucuri, Incapsula, F5 ASM, FortiWeb, Barracuda, ModSecurity, Wordfence, Azure Front Door, Fastly) contextualizam possíveis falsos negativos do `WebScanAdapter` — não são vulnerabilidade, são sinal de que um WAF pode estar filtrando os probes de injeção. O detalhe do ativo (`GET /api/assets/{id}/`) já inclui `technologies` aninhadas.
 
 ### `GET /api/assets/{id}/dns-records/`
 Lista registros DNS não-host descobertos do domínio do ativo (MX/NS/TXT/SOA/SRV — A/AAAA viram o próprio `Asset`).
@@ -213,7 +213,7 @@ Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`, `?category=`, 
   "dedup_key": "a3f5...", "triage_status": "open"
 }
 ```
-> `category`: uma das 18 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado). Os findings também podem ser filtrados por `?owasp_2021=`, `?owasp_2025=` e `?cwe=`.
+> `category`: uma das 18 categorias de `FindingCategory` (ver `docs/scanning-engine.md`). `dedup_key` identifica o achado lógico entre execuções de scan distintas; `triage_status` (`open`\|`fixed`\|`false-positive`\|`accepted-risk`) reflete a triagem mais recente para esse `dedup_key` (`open` se nunca triado). Os findings também podem ser filtrados por `?owasp_2021=`, `?owasp_2025=`, `?cwe=` e `?mitre_technique=` (ex.: `T1190` — ver seção MITRE ATT&CK abaixo).
 
 ### `GET /api/findings/grouped/`
 **Vulnerabilidades consolidadas entre alvos** (RN025) — a tela principal de Vulnerabilidades. Agrupa os `Finding` pela assinatura cross-target `(category, título)` (distinta do `dedup_key`, que é por-ativo), para que a mesma falha em vários alvos apareça **uma única vez**. Filtros: `?severity=`, `?category=`, `?search=`, `?page=`. Paginado. Cada grupo traz a severidade/CVSS **máximas** entre as ocorrências, a contagem de alvos afetados distintos, o total de ocorrências, o mapeamento OWASP/CWE, um finding representativo (descrição + evidência de "como foi detectado") e a lista `affected` (onde foi encontrada, com o ativo, o scan e a triagem de cada ocorrência).
@@ -225,6 +225,7 @@ Findings do ambiente. Filtros: `?severity=`, `?asset=`, `?scan=`, `?category=`, 
   "targets": 3, "occurrences": 5, "open_count": 4, "triage_status": "open",
   "last_seen": "...", "finding_id": "<representativo>",
   "playbook_key": "injection.sqli-error", "owasp_2021": "A03", "owasp_2025": "A05", "cwe": "CWE-89",
+  "mitre_technique": "T1190",
   "cve": null, "description": "...", "evidence": "...", "recommendation": "...",
   "affected": [
     { "id": "<finding-id>", "severity": "critical", "cvss": 9.8, "triage_status": "open",
@@ -281,9 +282,19 @@ Risk assessment computado sob demanda a partir dos `Finding` persistidos — nã
   "heatmap": [
     { "category": "tls", "category_label": "TLS", "severity": "medium", "count": 3 },
     { "category": "software", "category_label": "Software (CVE)", "severity": "high", "count": 12 }
+  ],
+  "chains": [
+    {
+      "asset": "<asset-id>", "ip": "192.168.0.10", "hostname": "web-01", "domain": null,
+      "chain_key": "xss-unmitigated-by-csp",
+      "title": "XSS sem mitigação de CSP", "severity": "critical",
+      "description": "O mesmo ativo tem XSS refletido E uma Content-Security-Policy fraca...",
+      "classes": ["injection.xss", "misconfig.weak-csp"]
+    }
   ]
 }
 ```
+> `chains` (purple team): combinações de `playbook_key` que, coexistindo no mesmo ativo, formam um risco mais grave que a soma das partes — catálogo pequeno e conservador (`correlation.FINDING_CHAINS`), nunca especulativo. Vazio na maioria dos scans (não é todo scan que tem uma combinação perigosa). Respeita a mesma exclusão de achados triados (RN018) do `risk_score`/`heatmap`.
 > `top_assets` vem ordenado por `risk_score` decrescente (priorização automática). `heatmap` é uma lista plana de células `{category, category_label, severity, count}` — o frontend faz o pivô para a grade; `category_label` já vem em PT-BR pronto para exibição. Achados triados como resolvidos (`fixed`/`false-positive`/`accepted-risk` — RN018) são excluídos de `summary`, `top_assets` e `heatmap`.
 
 ---
@@ -381,7 +392,7 @@ Evidências de exploração automatizada (aba Evidências) — **read-only** (RN
 ```
 
 ### `GET /api/playbooks/` · `GET /api/playbooks/{key}/`
-Guias curados de exploração por classe de vulnerabilidade (`key` = `Finding.playbook_key`, ex.: `injection.sqli-error`). Leitura para qualquer autenticado. Cada playbook traz `steps` (PoC manual), `escalation_path` ("até onde dá para ir"), `max_impact`, `tools`, `references`.
+Guias curados de exploração por classe de vulnerabilidade (`key` = `Finding.playbook_key`, ex.: `injection.sqli-error`). Leitura para qualquer autenticado. Cada playbook traz `steps` (PoC manual), `escalation_path` ("até onde dá para ir"), `max_impact`, `tools`, `references` e `detection_rule` (regra **Sigma** em YAML para o time de defesa detectar o próprio ataque nos logs — `""` quando a classe não tem assinatura de log confiável, ex. CSRF).
 
 ### `POST /api/playbooks/` · `PATCH /api/playbooks/{key}/` · `DELETE /api/playbooks/{key}/`
 CRUD de playbooks (conteúdo vivo, como a Knowledge Base). Escrita: `analyst`/`admin`; exclusão: `admin` (RN006).
@@ -425,6 +436,16 @@ Todo `Finding` retornado pela API inclui a classificação OWASP das duas ediç�
 ```
 
 Os findings podem ser filtrados por `?owasp_2021=A03`, `?owasp_2025=A05` ou `?cwe=CWE-89` (em `/api/findings/`).
+
+## MITRE ATT&CK
+
+Terceira dimensão de classificação (RN027), junto de OWASP/CWE — a técnica de ataque real que a classe corresponde:
+
+```json
+{ "category": "injection", "playbook_key": "injection.sqli-error", "mitre_technique": "T1190" }
+```
+
+Filtrável por `?mitre_technique=T1190` em `/api/findings/`. **Cobertura deliberadamente parcial** (27 de 42 classes) — vazio (`""`) quando a classe não tem uma técnica ATT&CK inequívoca mapeada, nunca uma correspondência especulativa. Ver `apps/scans/mitre.py` (fonte única) e `docs/scanning-engine.md`.
 
 **`GET /api/scans/{id}/owasp-coverage/`** — matriz de cobertura OWASP do scan (2021 + 2025). Leitura (analyst/viewer). Resposta:
 

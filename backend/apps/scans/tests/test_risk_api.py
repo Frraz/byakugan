@@ -21,6 +21,7 @@ def _finding(
     category="software",
     cve="CVE-2024-0001",
     dedup_key="",
+    playbook_key="",
 ):
     vulnerability = Vulnerability.objects.create(
         cve=cve, title=f"{cve}", severity=severity, cvss_score=cvss, description="d"
@@ -37,6 +38,7 @@ def _finding(
         evidence="e",
         recommendation="r",
         dedup_key=dedup_key,
+        playbook_key=playbook_key,
     )
 
 
@@ -54,6 +56,61 @@ def test_risk_overview_with_no_findings(viewer_client):
     assert resp.data["summary"]["risk_level"] == "info"
     assert resp.data["top_assets"] == []
     assert resp.data["heatmap"] == []
+    assert resp.data["chains"] == []
+
+
+def test_risk_overview_surfaces_finding_chain_on_same_asset(viewer_client):
+    scan = ScanFactory()
+    asset = Asset.objects.create(ip="192.168.0.30", hostname="chained")
+    _finding(asset, scan, category="injection", cve="CVE-XSS", playbook_key="injection.xss")
+    _finding(
+        asset,
+        scan,
+        category="web-headers",
+        cve="CVE-CSP",
+        playbook_key="misconfig.weak-csp",
+    )
+
+    resp = viewer_client.get(reverse("scans:risk-overview"))
+
+    assert resp.status_code == 200
+    chains = resp.data["chains"]
+    assert len(chains) == 1
+    assert chains[0]["chain_key"] == "xss-unmitigated-by-csp"
+    assert chains[0]["hostname"] == "chained"
+    assert chains[0]["severity"] == "critical"
+
+
+def test_risk_overview_excludes_chain_when_one_side_triaged(analyst_client, viewer_client):
+    scan = ScanFactory()
+    asset = Asset.objects.create(ip="192.168.0.31", hostname="partially-fixed")
+    xss = _finding(
+        asset,
+        scan,
+        category="injection",
+        cve="CVE-XSS2",
+        dedup_key="chain-dedup-1",
+        playbook_key="injection.xss",
+    )
+    _finding(
+        asset,
+        scan,
+        category="web-headers",
+        cve="CVE-CSP2",
+        playbook_key="misconfig.weak-csp",
+    )
+
+    # Confirma a cadeia antes da triagem.
+    assert len(viewer_client.get(reverse("scans:risk-overview")).data["chains"]) == 1
+
+    analyst_client.post(
+        reverse("scans:finding-triage", args=[xss.id]),
+        {"status": "fixed"},
+        format="json",
+    )
+
+    resp = viewer_client.get(reverse("scans:risk-overview"))
+    assert resp.data["chains"] == []
 
 
 def test_risk_overview_prioritizes_riskiest_asset_first(viewer_client):

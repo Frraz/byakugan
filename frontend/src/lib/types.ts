@@ -89,6 +89,38 @@ export interface Scan {
   created_at: string;
 }
 
+export type OwaspEdition = "2021" | "2025";
+
+/** Status derivado de uma célula da matriz (backend `owasp_coverage._cell_status`). */
+export type OwaspCellStatus = "proven" | "found" | "tested" | "limited" | "not-tested";
+
+/** Uma linha (categoria OWASP) da matriz de cobertura de uma edição. */
+export interface OwaspCoverageRow {
+  code: string;
+  label: string;
+  tested: boolean;
+  limited_coverage: boolean;
+  findings: number;
+  highest_severity: Severity | null;
+  proven: boolean;
+  status: OwaspCellStatus;
+}
+
+export interface OwaspEditionSummary {
+  tested: number;
+  found: number;
+  proven: number;
+  limited: number;
+  total: number;
+}
+
+/** Matriz de cobertura OWASP (2021 + 2025) de um scan — `GET /scans/{id}/owasp-coverage/`. */
+export interface OwaspCoverage {
+  "2021": OwaspCoverageRow[];
+  "2025": OwaspCoverageRow[];
+  summary: Record<OwaspEdition, OwaspEditionSummary>;
+}
+
 /** Resumo agregado da aba de Scans (KPIs) — backend `GET /scans/stats/`. */
 export interface ScanStats {
   total: number;
@@ -137,6 +169,18 @@ export interface Technology {
   created_at: string;
 }
 
+export type DnsRecordType = "MX" | "NS" | "TXT" | "SOA" | "SRV" | "CNAME" | "CAA" | "PTR";
+
+/** Registro DNS não-A/AAAA descoberto de um domínio (A/AAAA viram o próprio Asset). */
+export interface DnsRecord {
+  id: string;
+  asset: string;
+  domain: string;
+  record_type: DnsRecordType;
+  value: string;
+  created_at: string;
+}
+
 export interface Asset {
   id: string;
   ip: string | null;
@@ -148,6 +192,7 @@ export interface Asset {
   created_at: string;
   services?: Service[];
   technologies?: Technology[];
+  dns_records?: DnsRecord[];
 }
 
 export interface Vulnerability {
@@ -229,6 +274,13 @@ export interface Finding {
   dedup_key: string;
   /** Classe de vulnerabilidade que liga o finding ao playbook/evidência. */
   playbook_key: string;
+  /** Classificação OWASP Top 10 (2021/2025) — "" se a classe não tiver mapeamento. */
+  owasp_2021: string;
+  owasp_2025: string;
+  /** CWE primário (ex.: "CWE-89") — "" se não mapeado. */
+  cwe: string;
+  /** Técnica MITRE ATT&CK primária (ex.: "T1190") — "" se não mapeada (honestidade, não lacuna escondida). */
+  mitre_technique: string;
   triage_status: TriageStatus;
   created_at: string;
 }
@@ -263,6 +315,7 @@ export interface GroupedFinding {
   owasp_2021: string;
   owasp_2025: string;
   cwe: string;
+  mitre_technique: string;
   description: string;
   evidence: string;
   recommendation: string;
@@ -357,6 +410,9 @@ export interface ExploitationPlaybook {
   max_impact: ImpactLevel;
   tools: string[];
   references: string[];
+  /** Regra de detecção Sigma (YAML) para o time de defesa — "" quando a
+   * classe não tem assinatura de log confiável (ver docs/exploitation-engine.md). */
+  detection_rule: string;
   created_at: string;
   updated_at: string;
 }
@@ -396,10 +452,26 @@ export interface HeatmapCell {
   count: number;
 }
 
+/** Combinação de classes que, juntas no mesmo ativo, formam um risco mais
+ * grave que a soma das partes (ex.: XSS + CSP fraca) — correlação purple
+ * team (ver docs/exploitation-engine.md). */
+export interface FindingChain {
+  asset: string;
+  ip: string | null;
+  hostname: string | null;
+  domain: string | null;
+  chain_key: string;
+  title: string;
+  description: string;
+  severity: Severity;
+  classes: string[];
+}
+
 export interface RiskOverview {
   summary: RiskSummary;
   top_assets: AssetRisk[];
   heatmap: HeatmapCell[];
+  chains: FindingChain[];
 }
 
 // --- Reporting ---
@@ -434,4 +506,21 @@ export interface KnowledgeArticle {
   references: string[];
   created_at: string;
   updated_at: string;
+}
+
+// --- Auditoria ---
+
+export type AuditSeverity = "info" | "warning" | "critical";
+
+/** Evento imutável da trilha de auditoria (admin-only) — `GET /audit-logs/`. */
+export interface AuditLogEntry {
+  id: string;
+  /** FK cru do usuário (id) — preferir `user_email` para exibição. */
+  user: string | null;
+  user_email: string | null;
+  action: string;
+  severity: AuditSeverity;
+  source: string | null;
+  metadata: Record<string, unknown>;
+  timestamp: string;
 }

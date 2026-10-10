@@ -1,9 +1,9 @@
 /** Tela de login — identidade da marca, dark command-center. */
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 
-import { EyeMark } from "@/components/brand/Logo";
+import { Mark } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,13 @@ export function LoginPage() {
   const login = useLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Capturado uma única vez: se o usuário chegou aqui por refresh falho (não
+  // por logout manual), mostramos o aviso e limpamos a flag para não repetir
+  // em um próximo acesso à página.
+  const [showExpiredNotice] = useState(() => useAuthStore.getState().sessionExpired);
+  useEffect(() => {
+    if (useAuthStore.getState().sessionExpired) useAuthStore.getState().setSessionExpired(false);
+  }, []);
 
   if (access) return <Navigate to="/" replace />;
 
@@ -32,15 +39,21 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <EyeMark size={108} className="text-accent" />
-          <h1 className="mt-4 text-3xl font-extrabold tracking-[0.2em] text-foreground">
+          <Mark size={56} className="text-primary" />
+          <h1 className="mt-4 text-2xl font-semibold tracking-[0.18em] text-foreground">
             BYAKUGAN
           </h1>
-          <p className="text-[11px] font-semibold tracking-[0.32em] text-primary">
-            CYBERSECURITY PLATFORM
+          <p className="text-[11px] font-medium tracking-[0.28em] text-muted-foreground">
+            SECURITY ASSESSMENT
           </p>
-          <p className="mt-3 text-sm text-muted-foreground">See Everything. Detect Everything.</p>
         </div>
+
+        {showExpiredNotice && (
+          <ErrorBanner
+            className="mb-4"
+            message="Sua sessão expirou. Faça login novamente para continuar."
+          />
+        )}
 
         <form onSubmit={onSubmit} className="glass space-y-4 p-6">
           <div className="space-y-1.5">

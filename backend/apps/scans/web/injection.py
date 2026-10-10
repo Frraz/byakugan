@@ -88,27 +88,33 @@ class ProbeResponse:
     body: str
 
 
-def _detect_xss(response: ProbeResponse, payload: str) -> str | None:
+def _detect_xss(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    # Marcador único por scan (``bykxss<token>``) — zero risco de já estar no
+    # baseline por coincidência, baseline não é necessário aqui.
     if payload in response.body:
         return f"Marcador injetado refletido sem escape HTML: '{payload}' presente na resposta."
     return None
 
 
-def _detect_sqli_error(response: ProbeResponse, payload: str) -> str | None:
+def _detect_sqli_error(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
     for pattern in _SQL_ERROR_PATTERNS:
         match = pattern.search(response.body)
-        if match:
+        if match and match.group(0) not in baseline_body:
             return f"Assinatura de erro de banco de dados na resposta: '{match.group(0)[:80]}'."
     return None
 
 
-def _detect_traversal(response: ProbeResponse, payload: str) -> str | None:
+def _detect_traversal(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    # Assinatura de /etc/passwd — estruturalmente improvável no baseline de
+    # uma aplicação web normal; não precisa de comparação.
     if _TRAVERSAL_RE.search(response.body):
         return "Conteúdo de /etc/passwd (padrão 'root:...:0:0:') encontrado na resposta."
     return None
 
 
-def _detect_redirect(response: ProbeResponse, payload: str) -> str | None:
+def _detect_redirect(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    # Marcador de domínio reservado único — não precisa de baseline (o
+    # header Location do baseline nunca aponta pra ele por definição).
     if response.status_code not in _REDIRECT_STATUS_CODES:
         return None
     location = response.headers.get("Location") or response.headers.get("location") or ""
@@ -117,14 +123,19 @@ def _detect_redirect(response: ProbeResponse, payload: str) -> str | None:
     return None
 
 
-def _detect_ssti(response: ProbeResponse, payload: str) -> str | None:
-    if _SSTI_RE.search(response.body):
-        return f"Expressão de template '{payload}' avaliada — '49' encontrado na resposta."
+def _detect_ssti(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    # '49' é um número mundano que pode aparecer no conteúdo normal da
+    # página (ex.: "Mostrando 49 resultados") sem relação com a injeção —
+    # só confirma se o próprio baseline (sem payload) NÃO tiver o mesmo match.
+    match = _SSTI_RE.search(response.body)
+    if match and not _SSTI_RE.search(baseline_body):
+        return f"Expressão de template '{payload}' avaliada — '49' encontrado na resposta (ausente do baseline)."
     return None
 
 
-def _detect_cmdi(response: ProbeResponse, payload: str) -> str | None:
-    if _CMDI_RE.search(response.body):
+def _detect_cmdi(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    match = _CMDI_RE.search(response.body)
+    if match and match.group(0) not in baseline_body:
         return "Saída de comando do sistema (padrão 'uid=...gid=...') encontrada na resposta."
     return None
 
@@ -140,8 +151,11 @@ _SSRF_RE = re.compile(
 )
 
 
-def _detect_ssrf(response: ProbeResponse, payload: str) -> str | None:
-    if _SSRF_RE.search(response.body):
+def _detect_ssrf(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    # 'meta-data/' isolado é genérico o bastante para aparecer por acaso num
+    # path/URL não relacionado — exige ausência do mesmo match no baseline.
+    match = _SSRF_RE.search(response.body)
+    if match and match.group(0) not in baseline_body:
         return "Metadata de nuvem/interno refletido na resposta — o servidor buscou a URL injetada (SSRF)."
     return None
 
@@ -158,7 +172,9 @@ CRLF_HEADER_VALUE = "injected"
 CRLF_PAYLOAD = f"byk\r\n{CRLF_HEADER_NAME}: {CRLF_HEADER_VALUE}"
 
 
-def _detect_crlf_injection(response: ProbeResponse, payload: str) -> str | None:
+def _detect_crlf_injection(response: ProbeResponse, payload: str, baseline_body: str) -> str | None:
+    # Header sintético com nome/valor fixos do scanner — não precisa de
+    # baseline (um alvo real jamais teria esse header por coincidência).
     for key, value in response.headers.items():
         if key.lower() == CRLF_HEADER_NAME and value.strip().lower() == CRLF_HEADER_VALUE:
             return (
@@ -297,15 +313,25 @@ class InjectionCheck:
     payload: str
     description: str
     recommendation: str
-    detect: Callable[[ProbeResponse, str], str | None]
+    detect: Callable[[ProbeResponse, str, str], str | None]
     #: Classe de vulnerabilidade (``Finding.playbook_key``) — liga o finding ao
     #: playbook curado (aba Evidências) e ao módulo de exploração. Vários checks
     #: podem mapear para o mesmo playbook (ex.: ssti-dollar/ssti-mustache →
     #: ``injection.ssti``).
     playbook_key: str = ""
 
-    def run(self, response: ProbeResponse) -> str | None:
-        return self.detect(response, self.payload)
+    def run(self, response: ProbeResponse, baseline_body: str = "") -> str | None:
+        """``baseline_body`` (opcional): corpo da MESMA URL sem o payload injetado.
+
+        Disciplina de red team sênior — nunca confiar num sinal sem checar se
+        ele já estava lá antes da injeção: detectores cujo sinal é um valor
+        mundano que pode aparecer por acaso no conteúdo normal da página
+        (ex.: SSTI procurando o número '49') só reportam se o sinal estiver
+        ausente do baseline. Detectores com marcador único por scan (XSS) ou
+        assinatura estruturalmente improvável de ocorrer por acaso (traversal,
+        redirect, CRLF) ignoram o parâmetro — não precisam dele.
+        """
+        return self.detect(response, self.payload, baseline_body)
 
     def to_finding(self, *, url: str, param: str, evidence: str) -> dict[str, Any]:
         return {

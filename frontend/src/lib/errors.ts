@@ -16,6 +16,9 @@ export function errorMessage(error: unknown, fallback = "Ocorreu um erro inesper
     }
     return error.message;
   }
+  if (error instanceof TypeError && /fetch/i.test(error.message)) {
+    return "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.";
+  }
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }

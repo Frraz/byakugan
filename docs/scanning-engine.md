@@ -220,6 +220,7 @@ Reexecutar o mesmo scan sobre o mesmo alvo cria **novos** registros de `Finding`
 - **Priorização automática**: `top_assets` — risk assessment por ativo, ordenado por `risk_score` decrescente.
 - **Agrupamento por criticidade**: `summary.severity` — contagem de findings do ambiente por severidade.
 - **Heatmap**: `heatmap` — contagem de findings por `(category, severity)`, com `category_label` (rótulo PT-BR pronto para a UI, `correlation.CATEGORY_LABELS`).
+- **Cadeias de risco (purple team)**: `chains` — combinações de `playbook_key` que, coexistindo no **mesmo ativo**, formam um risco mais grave que a soma das partes (ex.: XSS + CSP fraca = payload sem nenhuma camada de contenção). `correlation.FINDING_CHAINS` é um catálogo pequeno e deliberadamente conservador (5 combinações, todas com encadeamento direto e defensável — nunca especulativo, mesma disciplina de RN026); `compute_chains` só cruza o que já está em `FINDING_CHAINS`, nenhuma heurística nova. Também respeita `excluded_dedup_keys` — triar um lado da cadeia como resolvido a desfaz.
 
 ## Detectores OWASP (Fase B)
 
@@ -232,6 +233,12 @@ O `WebScanAdapter` foi estendido para cobrir os buracos do OWASP Top 10, mantend
 - **A08 Software & Data Integrity Failures** (`web/integrity.py`): Subresource Integrity ausente em recursos de terceiros (`integrity.missing-sri`) e bibliotecas JS desatualizadas (`data/js_libraries.py`, `integrity.vulnerable-js`).
 
 A classificação OWASP/CWE de cada finding é derivada centralmente da fonte única `owasp.py` (RN024). A matriz por scan e o mapeamento completo estão em `docs/owasp-coverage.md`.
+
+### Terceira dimensão: MITRE ATT&CK (`mitre.py`, RN027)
+
+Junto de OWASP/CWE, todo `Finding` também recebe uma técnica **MITRE ATT&CK** primária (`mitre_technique`) — a linguagem comum entre red team, blue team e ferramentas de SIEM (ATT&CK Navigator). Mesmo padrão arquitetural do OWASP: fonte única (`apps/scans/mitre.py:resolve_mitre`), derivada só do `playbook_key`, preenchida centralmente em `parsers.persist_findings` — nenhum detector define a técnica diretamente.
+
+**Cobertura deliberadamente parcial** (27 de 42 classes): a maioria das classes de injeção/controle de acesso/integridade mapeia para `T1190` (Exploit Public-Facing Application — a técnica correta e padrão da indústria para "explorou uma falha na aplicação pública"); um punhado de classes mais específicas ganha uma técnica mais precisa (`T1059` command injection, `T1606` forja de JWT, `T1078` credenciais default, `T1552.001` credenciais em arquivo exposto, `T1110` ausência de rate limit, `T1589` enumeração de usuário, `T1557` credenciais em texto claro, `T1590.002` zone transfer, `T1584.001` subdomain takeover). As demais 15 classes (ex.: `misconfig.weak-csp` — fraqueza de controle, não uma técnica de ataque; `exposure.cloud-storage-reference` — nunca executado, então não há técnica comprovada) ficam **sem mapeamento**, de propósito — honestidade antes de cobertura, mesmo espírito do `LIMITED_COVERAGE` do OWASP. Revisão humana é recomendada antes de usar este mapeamento num relatório de engajamento real.
 
 ## Cobertura expandida (Fase C)
 
@@ -260,3 +267,22 @@ Playbooks seedados em `migrations/0012_seed_phase_c2_playbooks.py`.
 - **A05 Documentação de API exposta** (`data/web_paths.py` + `web/exposure.py`): `swagger.json`/`openapi.json`/`v2|v3/api-docs`/`swagger-ui` adicionados a `SENSITIVE_PATHS` (mesma baseline diffing de sempre) com playbook dedicado `exposure.api-docs` — revela toda a superfície de endpoints/parâmetros da API, incluindo rotas não documentadas publicamente.
 
 Playbooks seedados em `migrations/0013_seed_phase_c3_playbooks.py`.
+
+### Fase C7 — marcadores de desserialização insegura
+
+Novo módulo `web/deserialization.py` — **puramente passivo** (zero requisições extras), category `integrity`:
+
+- **A08 Objeto Java serializado** (`detect_java_serialized_cookie`/`detect_java_serialized_in_body`): o stream de serialização Java sempre começa com os bytes `AC ED 00 05`, que em Base64 são **sempre** o prefixo `rO0A` (determinístico — não há falso positivo coincidental). O cookie `rememberMe` do Apache Shiro (precursor do Shiro-550/CVE-2016-4437, um dos RCEs mais explorados em Java corporativo) ganha um finding dedicado de maior confiança (`critical`) além da assinatura genérica (`high`). `playbook_key="integrity.java-deserialization"`.
+- **A08 PHP Object Injection** (`detect_php_serialized_in_body`/`detect_php_serialized_cookie`): assinatura estrutural do `serialize()` nativo do PHP (`O:<n>:"Classe":...`), praticamente impossível de ocorrer por acaso em texto livre. `playbook_key="integrity.php-object-injection"`.
+- **A08 ASP.NET ViewState sem criptografia explícita** (`detect_viewstate`, sobre os formulários já rastreados): campo `__VIEWSTATE` sem `__VIEWSTATEENCRYPTED` — **informativo** (severidade `low`), já que `EnableViewStateMac`/criptografia não são confirmáveis só pelo HTML; recomenda verificação manual (ex.: blacklist3r). `playbook_key="integrity.viewstate-exposed"`.
+
+Nenhum dos três tenta desserializar/explorar nada — isso exigiria uma gadget chain específica do classpath/framework do alvo (ysoserial/ysoserial.net/PHPGGC), fora do escopo de uma detecção genérica e não-destrutiva; os playbooks curados (`migrations/0014_seed_deserialization_playbooks.py`) documentam o caminho manual completo até RCE.
+
+### Fase C8 — auditoria de falso positivo (disciplina de red team sênior)
+
+Revisão deliberada dos detectores de injeção existentes por risco de falso positivo (RN026), não uma classe nova:
+
+- **SSTI corrigido**: `_detect_ssti` procurava `49` (resultado de `7*7`) em QUALQUER lugar da resposta injetada, sem comparar contra o baseline — uma página que naturalmente mostrasse "Mostrando 49 resultados" geraria SSTI falso-positivo mesmo sem injeção alguma ter efeito. Agora só reporta se `49` estiver ausente do baseline (RN026).
+- Mesma guarda estendida, por disciplina, a `_detect_cmdi`, `_detect_sqli_error` e `_detect_ssrf` — a assinatura capturada é comparada contra o baseline antes de reportar.
+- **Reconfirmação booleana**: `_run_injection` agora refaz o par verdadeiro/falso (SQLi/NoSQLi/LDAP) uma segunda vez, independente, antes de criar o finding — só reporta se o padrão condicional se repetir. Mesma técnica usada por ferramentas como sqlmap para descartar ruído de conteúdo dinâmico.
+- `InjectionCheck.run()` ganhou um parâmetro `baseline_body` opcional (default `""`, retrocompatível) — XSS/traversal/redirect/CRLF o ignoram de propósito (marcador único por scan ou assinatura estruturalmente improvável, já inequívocos sem comparação).

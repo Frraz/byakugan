@@ -21,7 +21,7 @@ from apps.core.audit import client_ip, record_audit
 from apps.core.exceptions import ExploitationDisabled
 from apps.core.permissions import IsAnalystOrAdmin, ReadOnlyOrAnalyst
 
-from .correlation import compute_asset_risk, compute_heatmap, compute_risk
+from .correlation import compute_asset_risk, compute_chains, compute_heatmap, compute_risk
 from .models import (
     Evidence,
     ExploitationPlaybook,
@@ -391,7 +391,16 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Finding.objects.select_related("scan", "asset", "vulnerability")
     serializer_class = FindingSerializer
     permission_classes = [ReadOnlyOrAnalyst]
-    filterset_fields = ["severity", "asset", "scan", "category", "owasp_2021", "owasp_2025", "cwe"]
+    filterset_fields = [
+        "severity",
+        "asset",
+        "scan",
+        "category",
+        "owasp_2021",
+        "owasp_2025",
+        "cwe",
+        "mitre_technique",
+    ]
     search_fields = ["title", "category", "vulnerability__cve", "cwe"]
     ordering_fields = ["created_at", "severity", "cvss"]
 
@@ -461,9 +470,7 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
 
         occurrences_by_pair: dict[tuple[str, str], list[Finding]] = {}
         if pair_filter:
-            for finding in (
-                self.get_queryset().filter(pair_filter).order_by("-created_at")
-            ):
+            for finding in self.get_queryset().filter(pair_filter).order_by("-created_at"):
                 key = (finding.category, finding.title)
                 occurrences_by_pair.setdefault(key, []).append(finding)
 
@@ -477,22 +484,26 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
                 "triage_status": getattr(finding, "triage_status", None)
                 or FindingTriage.Status.OPEN,
                 "created_at": finding.created_at,
-                "asset": {
-                    "id": asset.id if asset else None,
-                    "hostname": asset.hostname if asset else "",
-                    "ip": asset.ip if asset else None,
-                    "domain": asset.domain if asset else "",
-                }
-                if asset
-                else None,
-                "scan": {
-                    "id": scan.id,
-                    "target": scan.target,
-                    "scan_type": scan.scan_type,
-                    "created_at": scan.created_at,
-                }
-                if scan
-                else None,
+                "asset": (
+                    {
+                        "id": asset.id if asset else None,
+                        "hostname": asset.hostname if asset else "",
+                        "ip": asset.ip if asset else None,
+                        "domain": asset.domain if asset else "",
+                    }
+                    if asset
+                    else None
+                ),
+                "scan": (
+                    {
+                        "id": scan.id,
+                        "target": scan.target,
+                        "scan_type": scan.scan_type,
+                        "created_at": scan.created_at,
+                    }
+                    if scan
+                    else None
+                ),
             }
 
         results = []
@@ -516,15 +527,14 @@ class FindingViewSet(viewsets.ReadOnlyModelViewSet):
                     "targets": group["targets"],
                     "occurrences": group["occurrences"],
                     "open_count": open_count,
-                    "triage_status": (
-                        FindingTriage.Status.OPEN if open_count else "resolved"
-                    ),
+                    "triage_status": (FindingTriage.Status.OPEN if open_count else "resolved"),
                     "last_seen": group["last_seen"],
                     "finding_id": rep.id if rep else None,
                     "playbook_key": rep.playbook_key if rep else "",
                     "owasp_2021": rep.owasp_2021 if rep else "",
                     "owasp_2025": rep.owasp_2025 if rep else "",
                     "cwe": rep.cwe if rep else "",
+                    "mitre_technique": rep.mitre_technique if rep else "",
                     "description": rep.description if rep else "",
                     "evidence": rep.evidence if rep else "",
                     "recommendation": rep.recommendation if rep else "",
@@ -644,8 +654,13 @@ class RiskOverviewView(APIView):
     Ver docs/scanning-engine.md (seção Correlation Engine).
 
     Fase 5: achados triados como corrigido/falso-positivo/risco aceito
-    (``FindingTriage``) são excluídos do risk_score/heatmap — sem isso, o
-    score aditivo infla a cada reexecução do mesmo scan sobre o mesmo alvo.
+    (``FindingTriage``) são excluídos do risk_score/heatmap/chains — sem
+    isso, o score aditivo infla a cada reexecução do mesmo scan sobre o
+    mesmo alvo.
+
+    ``chains`` (purple team): combinações de classes que, coexistindo no
+    mesmo ativo, formam um risco mais grave que a soma das partes (ex.: XSS
+    + CSP fraca) — ver ``correlation.FINDING_CHAINS``.
     """
 
     permission_classes = [ReadOnlyOrAnalyst]
@@ -668,6 +683,7 @@ class RiskOverviewView(APIView):
                 "cvss",
                 "category",
                 "dedup_key",
+                "playbook_key",
             )
         )
         excluded_dedup_keys = set(
@@ -686,5 +702,6 @@ class RiskOverviewView(APIView):
                     :limit
                 ],
                 "heatmap": compute_heatmap(rows, excluded_dedup_keys=excluded_dedup_keys),
+                "chains": compute_chains(rows, excluded_dedup_keys=excluded_dedup_keys),
             }
         )

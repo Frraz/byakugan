@@ -1,9 +1,19 @@
 /** Guia curado de exploração: PoC manual + escalação ("até onde dá para ir"). */
 
-import { ArrowRight, ExternalLink, Wrench } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, ShieldCheck, Wrench } from "lucide-react";
+import { toast } from "sonner";
 
 import type { ExploitationPlaybook } from "@/lib/types";
 import { ImpactBadge, impactLabel } from "./ImpactBadge";
+
+async function copyDetectionRule(rule: string) {
+  try {
+    await navigator.clipboard.writeText(rule);
+    toast.success("Regra de detecção copiada.");
+  } catch {
+    toast.error("Não foi possível copiar — selecione o texto manualmente.");
+  }
+}
 
 /** Interpola {url}/{param}/{host} de um comando de PoC com o contexto real. */
 export function interpolate(
@@ -100,6 +110,39 @@ export function EvidencePlaybookCard({
               {tool}
             </span>
           ))}
+        </div>
+      )}
+
+      {playbook.detection_rule && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Regra de detecção (Sigma) — para o time de defesa
+            </h4>
+            <button
+              type="button"
+              onClick={() => copyDetectionRule(playbook.detection_rule)}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+            >
+              <Copy className="h-3 w-3" />
+              Copiar
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Formato <a
+              href="https://sigmahq.io/"
+              target="_blank"
+              rel="noreferrer"
+              className="underline hover:text-foreground"
+            >
+              Sigma
+            </a>{" "}
+            — pronta para adaptar e implantar em Splunk, Elastic, Microsoft Sentinel ou Chronicle.
+          </p>
+          <pre className="thin-scroll max-h-72 overflow-auto rounded-lg border border-border bg-popover p-3 font-mono text-[11px] text-foreground/90">
+            {playbook.detection_rule}
+          </pre>
         </div>
       )}
 

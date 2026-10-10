@@ -4,67 +4,76 @@
 
 /*
  * Tokens semânticos (convenção shadcn/ui, valores HSL).
- * `:root` define o tema claro; `.dark` aplica a identidade Cyber Navy
- * (docs/ui.md) — o dark é o tema padrão da aplicação.
+ * Identidade "Forensic Instrument" (PLANO_REDESIGN_BYAKUGAN.md, §3):
+ * ambiente escuro de precisão editorial, acento em latão mineral — sem
+ * neon, sem glassmorphism decorativo. `:root` define o tema claro
+ * (equivalente editorial, menos usado); `.dark` é o tema padrão da
+ * área operacional. Valores iniciais — revalidar contraste na Fase E (QA).
  */
 :root {
   font-family: "Inter Variable", Inter, system-ui, sans-serif;
   color-scheme: light;
 
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
+  --background: 45 20% 96%;
+  --foreground: 215 12% 12%;
+  --sidebar: 40 19% 94%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 215 12% 12%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --surface-2: 210 40% 96%;
-  --primary: 192 91% 36%;
+  --popover-foreground: 215 12% 12%;
+  --primary: 37 47% 37%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 210 40% 94%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 94%;
-  --muted-foreground: 215 25% 33%;
-  --accent: 262 60% 55%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 74% 47%;
+  --secondary: 43 16% 92%;
+  --secondary-foreground: 215 12% 12%;
+  --muted: 43 18% 92%;
+  --muted-foreground: 218 5% 44%;
+  --accent: 43 16% 92%;
+  --accent-foreground: 215 12% 12%;
+  --destructive: 355 54% 50%;
   --destructive-foreground: 0 0% 100%;
-  --success: 142 72% 29%;
-  --warning: 33 92% 36%;
-  --sev-high: 22 92% 40%;
-  --sev-info: 215 16% 40%;
-  --border: 214 32% 88%;
-  --input: 214 32% 82%;
-  --ring: 192 91% 36%;
-  --radius: 0.75rem;
+  --success: 155 52% 36%;
+  --warning: 45 68% 34%;
+  --sev-high: 26 61% 46%;
+  --sev-low: 199 51% 36%;
+  --sev-info: 226 7% 38%;
+  --dim: 218 4% 56%;
+  --border: 43 11% 87%;
+  --border-strong: 41 11% 76%;
+  --input: 42 12% 83%;
+  --ring: 37 47% 37%;
+  --radius: 0.5rem;
 }
 
 .dark {
   color-scheme: dark;
 
-  --background: 220 49% 8%; /* #0B1220 Cyber Navy */
-  --foreground: 214 47% 93%; /* #E6EDF6 */
-  --card: 221 46% 12%; /* #111A2E surface */
-  --card-foreground: 214 47% 93%;
-  --popover: 221 45% 11%; /* #0F1728 surface-2 */
-  --popover-foreground: 214 47% 93%;
-  --surface-2: 221 45% 11%; /* #0F1728 */
-  --primary: 190 100% 50%; /* #00D4FF Electric Blue */
-  --primary-foreground: 220 49% 8%;
-  --secondary: 221 39% 19%; /* #1E2A44 */
-  --secondary-foreground: 214 47% 93%;
-  --muted: 221 39% 16%;
-  --muted-foreground: 218 18% 61%; /* #8A97AD */
-  --accent: 255 100% 86%; /* #C8B6FF Byakugan Lavender */
-  --accent-foreground: 220 49% 8%;
-  --destructive: 0 84% 60%; /* #EF4444 */
-  --destructive-foreground: 0 0% 98%;
-  --success: 142 71% 45%; /* #22C55E */
-  --warning: 38 92% 50%; /* #F59E0B */
-  --sev-high: 25 95% 53%; /* #F97316 */
-  --sev-info: 215 16% 47%; /* #64748B */
-  --border: 221 39% 19%; /* #1E2A44 */
-  --input: 221 39% 19%;
-  --ring: 190 100% 50%;
+  --background: 216 19% 5%; /* #0B0D10 */
+  --foreground: 80 10% 94%; /* #F0F1EE */
+  --sidebar: 214 20% 7%; /* #0E1115 */
+  --card: 213 19% 9%; /* #13171C — surface */
+  --card-foreground: 80 10% 94%;
+  --popover: 212 21% 12%; /* #191F26 — surface-raised */
+  --popover-foreground: 80 10% 94%;
+  --primary: 36 53% 64%; /* #D4AE73 — latão mineral */
+  --primary-foreground: 216 19% 5%;
+  --secondary: 212 21% 12%;
+  --secondary-foreground: 80 10% 94%;
+  --muted: 214 18% 8%; /* #101317 — surface-subtle */
+  --muted-foreground: 212 10% 72%; /* #B0B7BF — text-secondary */
+  --accent: 212 19% 16%; /* realce neutro de hover, não a cor da marca */
+  --accent-foreground: 80 10% 94%;
+  --destructive: 356 82% 68%; /* #F06B73 */
+  --destructive-foreground: 216 19% 5%;
+  --success: 154 42% 62%; /* #75C6A3 */
+  --warning: 45 67% 66%; /* #E3C66F */
+  --sev-high: 23 85% 67%; /* #F29A63 */
+  --sev-low: 201 49% 67%; /* #80B7D4 */
+  --sev-info: 214 14% 70%; /* #A7B0BC */
+  --dim: 213 9% 56%; /* #858E99 — text-muted/metadados */
+  --border: 214 16% 19%; /* #293039 */
+  --border-strong: 211 15% 27%; /* #3A444F */
+  --input: 211 15% 27%;
+  --ring: 36 53% 64%;
 }
 
 @layer base {
@@ -79,36 +88,17 @@
   #root {
     min-height: 100vh;
   }
-
-  /* Fundo "command center": glow radial sutil no topo (só no dark). */
-  .dark #root {
-    background-image:
-      radial-gradient(circle at 50% -10%, rgba(0, 212, 255, 0.08), transparent 55%),
-      radial-gradient(circle at 85% 0%, rgba(200, 182, 255, 0.06), transparent 45%);
-  }
 }
 
 @layer components {
-  /* Painel glass: superfície translúcida com blur e borda sutil. */
+  /* Superfície padrão: contraste de borda, sem blur nem transparência. */
   .glass {
-    @apply rounded-2xl border border-border bg-card/80 shadow-glass backdrop-blur-md;
+    @apply rounded-lg border border-border bg-card shadow-glass;
   }
 
-  /* Cartão de destaque: leve realce de topo + borda mais viva no dark. */
+  /* Painel de destaque: borda levemente mais marcada, sem tingimento de cor. */
   .glass-elevated {
-    @apply rounded-2xl border border-border bg-card shadow-glass;
-  }
-  .dark .glass-elevated {
-    background-image: linear-gradient(
-      180deg,
-      hsl(var(--primary) / 0.06),
-      transparent 42%
-    );
-    @apply border-primary/20;
-  }
-
-  .neon-ring {
-    @apply ring-1 ring-primary/40 shadow-glow;
+    @apply rounded-lg border border-border-strong bg-card shadow-glass;
   }
 
   /* Barra de rolagem discreta. */
@@ -118,5 +108,16 @@
   }
   .thin-scroll::-webkit-scrollbar-thumb {
     @apply rounded-full bg-border;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

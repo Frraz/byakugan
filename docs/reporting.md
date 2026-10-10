@@ -24,7 +24,8 @@ Público: analistas. Detalhe e evidência.
 
 Conteúdo:
 - Inventário de ativos e serviços.
-- Lista completa de findings com: título, severidade, CVSS, descrição, **evidência**, **recomendação**, referências (CVE/links).
+- Lista completa de findings com: título, severidade, CVSS, descrição, **evidência**, **recomendação**, referências (CVE/links), classificação OWASP/CWE/MITRE ATT&CK.
+- **Narrativa de Ataque**: por ativo, os passos de exploração *comprovados* (não especulação) em sequência, com técnica MITRE ATT&CK e cadeias de risco aplicáveis.
 - Logs relevantes e metadados do scan.
 - Passos de remediação (integração com Knowledge Base).
 
@@ -77,8 +78,10 @@ Conteúdo:
 
 `apps/reports` — `payload.py` monta o payload acima reaproveitando o Correlation Engine (`apps.scans.correlation`) para `risk_score`/`risk_level`/`heatmap`, garantindo que o número mostrado no relatório seja **exatamente** o mesmo do dashboard. `rendering.py` é o dispatcher dos três formatos: JSON (payload completo), CSV (uma linha por finding, via `csv.DictWriter`) e PDF, delegado a `pdf.py` (via `reportlab` — puro Python, sem dependência de sistema como Pango/Cairo). `services.generate_report` grava o artefato em `MEDIA_ROOT/reports/<uuid>.<ext>` e cria o registro `Report`; nunca é servido por URL estática — só via `GET /api/reports/{id}/download/` (autenticado + auditado).
 
-**Diferenças por `report_type`**: o executivo inclui `top_risks` (ativos priorizados), `heatmap` e `narrative` (sumário narrativo — `build_executive_narrative`); o técnico inclui `assets` (inventário), `findings` (lista completa, com `owasp_2021`/`owasp_2025`/`cwe`), `knowledge_articles` (artigos da Knowledge Base relacionados às categorias dos findings — um por categoria distinta, ver `build_related_knowledge`) e `references` (CVEs distintos com link NVD + `references` do catálogo — `build_references`). O CSV ignora `report_type` — é sempre a lista de findings.
+**Diferenças por `report_type`**: o executivo inclui `top_risks` (ativos priorizados), `heatmap` e `narrative` (sumário narrativo — `build_executive_narrative`); o técnico inclui `assets` (inventário), `findings` (lista completa, com `owasp_2021`/`owasp_2025`/`cwe`/`mitre_technique`), `attack_narrative` (narrativa de ataque — ver abaixo), `knowledge_articles` (artigos da Knowledge Base relacionados às categorias dos findings — um por categoria distinta, ver `build_related_knowledge`) e `references` (CVEs distintos com link NVD + `references` do catálogo — `build_references`). O CSV ignora `report_type` — é sempre a lista de findings.
 
 **Cobertura OWASP Top 10 (ambos os tipos)**: os dois relatórios trazem `owasp_coverage` (`build_owasp_coverage`, reaproveitando `apps.scans.owasp_coverage.compute_owasp_coverage` — a mesma fonte da API `/scans/{id}/owasp-coverage/`). No PDF, é a seção **"Cobertura OWASP Top 10"** com uma tabela A01–A10 por edição (2021 e 2025): situação (provado/encontrado/testado/cobertura limitada/não testado), nº de findings e maior severidade. É o entregável central para a banca/cliente. Ver `docs/owasp-coverage.md`.
+
+**Narrativa de Ataque (relatório técnico, Fase C12)**: `build_attack_narrative` monta, por ativo, a seção que um pentester sênior escreveria manualmente — não a lista plana de findings, mas **como um atacante encadearia o que foi provado**: os passos com `Evidence.status == proven` (nunca especulação sobre findings não explorados), em ordem de impacto, cada um com sua técnica MITRE ATT&CK (`mitre.resolve_mitre`) e as cadeias de risco do Correlation Engine (`correlation.compute_chains`) que se aplicam ao ativo. Fica **ausente** (não uma seção vazia) quando o scan não tem nenhuma `Evidence` `proven` — exige exploração habilitada e bem-sucedida. No PDF, é a seção **"Narrativa de Ataque"**, entre Findings e Cobertura OWASP.
 
 **Não implementado ainda**: logs brutos do scan no relatório técnico (hoje traz metadados — tipo, status, autorização, timestamps — mas não logs linha a linha).

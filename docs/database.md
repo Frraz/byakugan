@@ -170,6 +170,7 @@ Ocorrência concreta de uma vulnerabilidade/exposição num ativo, detectada por
 | owasp_2021 | string(4) | categoria OWASP Top 10 2021 (ex.: `A03`), indexado — derivado da classe/categoria (RN024) |
 | owasp_2025 | string(4) | categoria OWASP Top 10 2025 (ex.: `A05`), indexado — derivado da classe/categoria (RN024) |
 | cwe | string(16) | CWE primário (ex.: `CWE-89`) |
+| mitre_technique | string(20) | técnica MITRE ATT&CK primária (ex.: `T1190`), indexado — derivada do `playbook_key` (RN027); `""` nas classes sem correspondência inequívoca (honestidade — cobertura deliberadamente parcial, 27 de 42) |
 | created_at / updated_at | datetime | |
 
 > Diferente de `assets`/`services`/`technologies` (inventário corrente, deduplicado), cada `finding` é **imutável e amarrado ao scan que o gerou** (RN003/RN005) — reexecuções criam novos registros, nunca sobrescrevem os anteriores. `dedup_key` reconhece o "mesmo" achado entre essas reexecuções sem violar essa imutabilidade — ver `finding_triages`.
@@ -226,9 +227,10 @@ Guia curado de exploração por classe de vulnerabilidade (conteúdo **vivo/edit
 | max_impact | enum | maior impacto atingível (ver `impact_level`) |
 | tools | jsonb | lista (ex.: `["sqlmap", "Burp Suite"]`) |
 | references | jsonb | OWASP/CWE/exploit-db |
+| detection_rule | text | regra de detecção **Sigma** (YAML) para o time de defesa — `""` quando a classe não tem assinatura de log confiável (ver `docs/exploitation-engine.md`) |
 | created_at / updated_at | datetime | |
 
-> Seedado por migração de dados (`scans/migrations/0006_seed_playbooks.py`, mesmo padrão da Knowledge Base). CRUD por `admin`/`analyst`; leitura para qualquer autenticado. Lookup por `key` (com ponto) em `GET /api/playbooks/{key}/`.
+> Seedado por migração de dados (`scans/migrations/0006_seed_playbooks.py`, mesmo padrão da Knowledge Base; `detection_rule` seedado separadamente em `0016_seed_detection_rules.py` para as 20 classes mais comuns). CRUD por `admin`/`analyst`; leitura para qualquer autenticado. Lookup por `key` (com ponto) em `GET /api/playbooks/{key}/`.
 
 ### reports
 Relatório gerado a partir de um scan.
@@ -282,3 +284,4 @@ Trilha de auditoria imutável.
 - **Findings sempre com contexto**: `description`, `evidence` e `recommendation` são obrigatórios.
 - **Autorização (RN007)**: `targets`/`scans` sempre **carregam** `authorized_by` + `authorization_scope`, e o alvo é revalidado contra o escopo (fail-closed) antes de cada probe. Em deployment privado esses campos são **opcionais na entrada** (`blank`, migração `scans/0010_target_authorization_optional`) e auto-preenchidos pelo serializer/`create_scan` (usuário autenticado; o próprio alvo como escopo).
 - **Classificação OWASP (RN024)**: `findings.owasp_2021` e `findings.owasp_2025` (`CharField(4)`, ex.: `"A03"`, indexados) + `findings.cwe` (`CharField(16)`, ex.: `"CWE-89"`) — derivados de `playbook_key`/`category` pela fonte única `apps/scans/owasp.py` em `parsers.persist_findings`; vazios em linhas antigas/sem mapeamento (retrocompatível). A migration `0007_finding_owasp_classification` adiciona os campos e faz backfill das linhas existentes. Novas categorias de finding: `access-control`, `auth`, `integrity` (Fase B). Ver `docs/owasp-coverage.md`.
+- **Classificação MITRE ATT&CK (RN027)**: `findings.mitre_technique` (`CharField(20)`, ex.: `"T1190"`, indexado) — terceira dimensão, derivada só de `playbook_key` pela fonte única `apps/scans/mitre.py` em `parsers.persist_findings`; migrations `0017_add_mitre_technique_field` (schema) + `0018_backfill_mitre_technique` (backfill), mesmo padrão de `0007`.

@@ -77,3 +77,59 @@ def test_finding_serializer_exposes_owasp_fields(analyst_client):
     assert row["owasp_2021"] == "A03"
     assert row["owasp_2025"] == "A05"
     assert row["cwe"] == "CWE-89"
+
+
+# --- MITRE ATT&CK (terceira dimensão de classificação) ----------------------
+
+
+def test_persist_findings_enriches_mitre_technique():
+    scan = ScanFactory(scan_type=Scan.ScanType.VULNERABILITY, status=Scan.Status.COMPLETED)
+    persist_findings(scan, [_vuln()])
+    finding = Finding.objects.get()
+    assert finding.mitre_technique == "T1190"
+
+
+def test_persist_findings_leaves_mitre_technique_blank_when_unmapped():
+    scan = ScanFactory(scan_type=Scan.ScanType.VULNERABILITY, status=Scan.Status.COMPLETED)
+    persist_findings(
+        scan,
+        [_vuln(title="CSP fraca", playbook_key="misconfig.weak-csp", category="web-headers")],
+    )
+    finding = Finding.objects.get()
+    assert finding.mitre_technique == ""
+
+
+def test_finding_serializer_exposes_mitre_technique(analyst_client):
+    scan = ScanFactory(scan_type=Scan.ScanType.VULNERABILITY, status=Scan.Status.COMPLETED)
+    persist_findings(scan, [_vuln()])
+
+    url = reverse("scans:scan-findings", args=[scan.id])
+    resp = analyst_client.get(url)
+    assert resp.json()[0]["mitre_technique"] == "T1190"
+
+
+def test_findings_filterable_by_mitre_technique(analyst_client):
+    scan = ScanFactory(scan_type=Scan.ScanType.VULNERABILITY, status=Scan.Status.COMPLETED)
+    persist_findings(
+        scan,
+        [
+            _vuln(),  # T1190
+            _vuln(
+                title="Command injection",
+                playbook_key="injection.command-injection",
+                category="injection",
+            ),  # T1059
+        ],
+    )
+
+    resp = analyst_client.get(reverse("scans:finding-list"), {"mitre_technique": "T1059"})
+    assert resp.data["count"] == 1
+    assert resp.data["results"][0]["title"] == "Command injection"
+
+
+def test_findings_grouped_includes_mitre_technique(analyst_client):
+    scan = ScanFactory(scan_type=Scan.ScanType.VULNERABILITY, status=Scan.Status.COMPLETED)
+    persist_findings(scan, [_vuln()])
+
+    resp = analyst_client.get(reverse("scans:finding-grouped"))
+    assert resp.data["results"][0]["mitre_technique"] == "T1190"

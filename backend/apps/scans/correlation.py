@@ -167,6 +167,132 @@ def compute_asset_risk(
     return assessments
 
 
+#: Combinações de classes (``Finding.playbook_key``) cuja **coexistência no
+#: mesmo ativo** eleva o risco muito além da soma das partes — a correlação
+#: que um analista purple team sênior faria manualmente ao revisar os
+#: achados de um scan, em vez de olhar cada finding isoladamente. Cada
+#: entrada é inegociavelmente **conservadora**: só entram combinações cujo
+#: encadeamento é direto e defensável (não "poderia talvez"), na mesma
+#: disciplina de honestidade técnica do resto do motor (RN026,
+#: ``owasp.LIMITED_COVERAGE``) — poucas e precisas, nunca especulativas.
+FINDING_CHAINS: tuple[dict[str, Any], ...] = (
+    {
+        "key": "xss-unmitigated-by-csp",
+        "classes": frozenset({"injection.xss", "misconfig.weak-csp"}),
+        "title": "XSS sem mitigação de CSP",
+        "description": (
+            "O mesmo ativo tem XSS refletido E uma Content-Security-Policy "
+            "fraca (unsafe-inline/wildcard/sem frame-ancestors) — a principal "
+            "defesa em profundidade contra o impacto de um XSS está ausente, "
+            "então o payload executa sem nenhuma camada de contenção adicional."
+        ),
+        "severity": "critical",
+    },
+    {
+        "key": "default-creds-no-rate-limit",
+        "classes": frozenset({"credential.default", "auth.no-rate-limit"}),
+        "title": "Credenciais default + ausência de rate limiting",
+        "description": (
+            "O ativo já expôs credenciais default E não possui rate "
+            "limiting/lockout no login — mesmo após trocar a credencial "
+            "encontrada, um ataque de força bruta contra outras contas "
+            "permanece praticamente irrestrito."
+        ),
+        "severity": "critical",
+    },
+    {
+        "key": "jwt-weak-forced-browsing",
+        "classes": frozenset({"auth.jwt-weak", "access-control.forced-browsing"}),
+        "title": "JWT forjável + área administrativa sem autenticação",
+        "description": (
+            "O ativo tem um JWT forjável (alg:none/segredo fraco) E um "
+            "endpoint administrativo acessível sem autenticação — mesmo sem "
+            "encadear as duas provas automaticamente, um atacante tem dois "
+            "caminhos independentes para a mesma área privilegiada: forjar um "
+            "token com claim de admin, ou simplesmente acessar o painel direto."
+        ),
+        "severity": "critical",
+    },
+    {
+        "key": "idor-no-rate-limit",
+        "classes": frozenset({"access-control.idor", "auth.no-rate-limit"}),
+        "title": "IDOR + ausência de rate limiting",
+        "description": (
+            "O ativo tem IDOR confirmado (objetos de outros usuários "
+            "acessíveis trocando um id) E não possui rate limiting — a "
+            "enumeração em massa de todos os registros do sistema (não só "
+            "uma amostra manual) é praticamente irrestrita."
+        ),
+        "severity": "critical",
+    },
+    {
+        "key": "sqli-cleartext-credentials",
+        "classes": frozenset({"injection.sqli-error", "crypto.cleartext-credentials"}),
+        "title": "SQL injection + login sobre HTTP (credenciais em texto claro)",
+        "description": (
+            "O ativo tem SQL injection (acesso direto ao banco) E login "
+            "servido sobre HTTP (credenciais em texto claro em trânsito) — "
+            "dois caminhos independentes e cumulativos para comprometer "
+            "credenciais de usuários, um via extração do banco, outro via "
+            "interceptação de rede."
+        ),
+        "severity": "critical",
+    },
+)
+
+
+def compute_chains(
+    rows: list[dict[str, Any]], *, excluded_dedup_keys: set[str] | None = None
+) -> list[dict[str, Any]]:
+    """Detecta combinações de classes (``playbook_key``) que, juntas no mesmo
+    ativo, formam uma cadeia de risco mais grave que cada achado isolado.
+
+    ``rows`` deve incluir ``asset_id`` e ``playbook_key`` (além dos campos de
+    exibição do ativo, como em ``compute_asset_risk``). Puramente derivado de
+    ``FINDING_CHAINS` — nenhuma heurística nova aqui, só o cruzamento. Um
+    mesmo ativo pode aparecer em mais de uma cadeia.
+    """
+    rows = _exclude_triaged(rows, excluded_dedup_keys)
+    classes_by_asset: dict[str, set[str]] = defaultdict(set)
+    display: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        asset_id = str(row["asset_id"])
+        key = row.get("playbook_key") or ""
+        if key:
+            classes_by_asset[asset_id].add(key)
+        display.setdefault(
+            asset_id,
+            {
+                "ip": row.get("asset__ip"),
+                "hostname": row.get("asset__hostname"),
+                "domain": row.get("asset__domain"),
+            },
+        )
+
+    results: list[dict[str, Any]] = []
+    for asset_id, classes_present in classes_by_asset.items():
+        for chain in FINDING_CHAINS:
+            if chain["classes"] <= classes_present:
+                results.append(
+                    {
+                        "asset": asset_id,
+                        **display[asset_id],
+                        "chain_key": chain["key"],
+                        "title": chain["title"],
+                        "description": chain["description"],
+                        "severity": chain["severity"],
+                        "classes": sorted(chain["classes"]),
+                    }
+                )
+    results.sort(
+        key=lambda c: (
+            SEVERITIES.index(c["severity"]) if c["severity"] in SEVERITIES else len(SEVERITIES),
+            c["asset"],
+        )
+    )
+    return results
+
+
 def compute_heatmap(
     rows: list[dict[str, Any]], *, excluded_dedup_keys: set[str] | None = None
 ) -> list[dict[str, Any]]:

@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAsset, useFindings } from "@/hooks/useData";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { formatRelative } from "@/lib/format";
 import type { Finding } from "@/lib/types";
 
 export function AssetDetailPage() {
@@ -31,6 +32,7 @@ export function AssetDetailPage() {
   const a = asset.data;
   const services = a.services ?? [];
   const technologies = a.technologies ?? [];
+  const dnsRecords = a.dns_records ?? [];
   const findingList = findings.data?.results ?? [];
 
   return (
@@ -66,6 +68,7 @@ export function AssetDetailPage() {
           <TabsTrigger value="findings">Findings ({findingList.length})</TabsTrigger>
           <TabsTrigger value="services">Serviços ({services.length})</TabsTrigger>
           <TabsTrigger value="technologies">Tecnologias ({technologies.length})</TabsTrigger>
+          <TabsTrigger value="dns">DNS ({dnsRecords.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="findings" className="mt-4">
@@ -119,6 +122,7 @@ export function AssetDetailPage() {
                     <TableHead>Serviço</TableHead>
                     <TableHead>Produto</TableHead>
                     <TableHead>Versão</TableHead>
+                    <TableHead>Observado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -130,6 +134,9 @@ export function AssetDetailPage() {
                       <TableCell className="text-muted-foreground">{sv.product ?? "—"}</TableCell>
                       <TableCell className="font-mono text-muted-foreground">
                         {sv.version ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatRelative(sv.created_at)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -154,7 +161,9 @@ export function AssetDetailPage() {
                     <TableHead>Tecnologia</TableHead>
                     <TableHead>Versão</TableHead>
                     <TableHead>Confiança</TableHead>
+                    <TableHead>Fonte</TableHead>
                     <TableHead>Evidência</TableHead>
+                    <TableHead>Observado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -168,8 +177,54 @@ export function AssetDetailPage() {
                       <TableCell className="capitalize text-muted-foreground">
                         {tech.confidence}
                       </TableCell>
+                      <TableCell className="text-muted-foreground">{tech.source || "—"}</TableCell>
                       <TableCell className="max-w-xs truncate text-muted-foreground">
                         {tech.evidence || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatRelative(tech.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="dns" className="mt-4">
+          {dnsRecords.length === 0 ? (
+            <EmptyState
+              title="Nenhum registro DNS"
+              hint="Registros MX, NS, TXT e outros aparecem aqui conforme são descobertos (DNS/transferência de zona)."
+            />
+          ) : (
+            <div className="glass overflow-x-auto p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Domínio</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Observado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dnsRecords.map((rec) => (
+                    <TableRow key={rec.id}>
+                      <TableCell>
+                        <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-xs text-foreground">
+                          {rec.record_type}
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-muted-foreground">
+                        {rec.domain}
+                      </TableCell>
+                      <TableCell className="max-w-md truncate font-mono text-sm text-primary">
+                        {rec.value}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatRelative(rec.created_at)}
                       </TableCell>
                     </TableRow>
                   ))}

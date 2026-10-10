@@ -412,10 +412,16 @@ export function ScansPage() {
         loading={cancel.isPending}
         description={
           cancelling && (
-            <p>
-              O scan de <span className="font-mono text-foreground">{cancelling.target}</span> será
-              interrompido.
-            </p>
+            <>
+              <p>
+                O scan de <span className="font-mono text-foreground">{cancelling.target}</span>{" "}
+                será interrompido.
+              </p>
+              <p>
+                O cancelamento é cooperativo: a fase em andamento pode levar alguns instantes para
+                parar. Resultados já coletados até esse ponto são preservados.
+              </p>
+            </>
           )
         }
         onConfirm={() => {

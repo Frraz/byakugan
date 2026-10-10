@@ -36,7 +36,7 @@ async function refreshAccessToken(): Promise<string | null> {
     body: JSON.stringify({ refresh }),
   });
   if (!resp.ok) {
-    clear();
+    clear({ expired: true });
     return null;
   }
   const data = (await resp.json()) as { access: string };

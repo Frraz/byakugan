@@ -7,6 +7,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/ui/category-badge";
+import { CopyButton } from "@/components/ui/copy-button";
+import { MonoBadge } from "@/components/ui/mono-badge";
 import {
   Select,
   SelectContent,
@@ -66,9 +68,12 @@ function ExploitationSection({ finding }: { finding: Finding }) {
             {evidence.impact_level !== "none" && <ImpactBadge impact={evidence.impact_level} />}
           </div>
           {evidence.proof && (
-            <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-popover p-2 font-mono text-xs text-foreground/90">
-              {evidence.proof}
-            </pre>
+            <div className="relative">
+              <CopyButton value={evidence.proof} label="Copiar prova" className="absolute right-1 top-1" />
+              <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-popover p-2 pr-9 font-mono text-xs text-foreground/90">
+                {evidence.proof}
+              </pre>
+            </div>
           )}
           {evidence.steps_performed.length > 0 && (
             <div className="pt-1">
@@ -212,6 +217,14 @@ export function FindingDetailSheet({
                 <TriageBadge status={finding.triage_status} />
               </div>
               <SheetTitle className="text-lg leading-snug">{finding.title}</SheetTitle>
+              {(finding.owasp_2021 || finding.owasp_2025 || finding.cwe || finding.mitre_technique) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <MonoBadge label="OWASP 2021" value={finding.owasp_2021} />
+                  <MonoBadge label="OWASP 2025" value={finding.owasp_2025} />
+                  <MonoBadge label="CWE" value={finding.cwe} />
+                  <MonoBadge label="MITRE ATT&CK" value={finding.mitre_technique} />
+                </div>
+              )}
               <SheetDescription className="sr-only">Detalhe do finding</SheetDescription>
             </SheetHeader>
 
@@ -227,9 +240,12 @@ export function FindingDetailSheet({
 
             {finding.evidence && (
               <Section title="Evidência">
-                <pre className="thin-scroll max-h-64 overflow-auto rounded-xl border border-border bg-popover p-3 font-mono text-xs text-foreground/90">
-                  {finding.evidence}
-                </pre>
+                <div className="relative">
+                  <CopyButton value={finding.evidence} label="Copiar evidência" className="absolute right-1 top-1" />
+                  <pre className="thin-scroll max-h-64 overflow-auto rounded-xl border border-border bg-popover p-3 pr-9 font-mono text-xs text-foreground/90">
+                    {finding.evidence}
+                  </pre>
+                </div>
               </Section>
             )}
 

@@ -7,6 +7,7 @@ import {
   Crosshair,
   Flame,
   Grid3x3,
+  Link2,
   PieChart,
   Plus,
   Radar,
@@ -127,6 +128,38 @@ export function DashboardPage() {
           )}
         </GlassPanel>
       </div>
+
+      {/* Cadeias de risco (purple team) — só aparece quando há alguma; não é
+          um elemento estrutural do dashboard como o heatmap, é um alerta. */}
+      {(risk.data?.chains ?? []).length > 0 && (
+        <GlassPanel className="border-destructive/40 bg-destructive/5">
+          <SectionHeading title="Cadeias de risco (purple team)" icon={Link2} />
+          <p className="mb-2 text-xs text-muted-foreground">
+            Combinações de achados que, juntas no mesmo ativo, são mais graves que a soma das
+            partes.
+          </p>
+          <ul className="space-y-2">
+            {risk.data!.chains.map((c) => (
+              <li
+                key={`${c.asset}-${c.chain_key}`}
+                className="rounded-xl border border-destructive/30 bg-popover/40 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{c.title}</p>
+                  <SeverityBadge severity={c.severity} />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{c.description}</p>
+                <Link
+                  to={`/assets/${c.asset}`}
+                  className="mt-1.5 inline-block text-xs text-primary hover:underline"
+                >
+                  {c.hostname ?? c.ip ?? c.domain ?? c.asset.slice(0, 8)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </GlassPanel>
+      )}
 
       {/* Ativos priorizados + Heatmap */}
       <div className="grid gap-4 lg:grid-cols-5">

@@ -44,10 +44,19 @@ const KIND_LABELS: Record<TargetKind, string> = {
   cidr: "CIDR",
 };
 
+const EXPIRING_SOON_DAYS = 7;
+
 function isExpired(target: Target): boolean {
   return Boolean(
     target.authorization_expires_at && new Date(target.authorization_expires_at) < new Date(),
   );
+}
+
+/** Autorização válida, mas vencendo nos próximos `EXPIRING_SOON_DAYS` dias. */
+function isExpiringSoon(target: Target): boolean {
+  if (!target.authorization_expires_at || isExpired(target)) return false;
+  const msRemaining = new Date(target.authorization_expires_at).getTime() - Date.now();
+  return msRemaining <= EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000;
 }
 
 export function TargetsPage() {
@@ -211,6 +220,18 @@ export function TargetsPage() {
                             </TooltipTrigger>
                             <TooltipContent>
                               Expirou em {formatDate(t.authorization_expires_at)}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : isExpiringSoon(t) ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center gap-1.5 text-sm text-warning">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                até {formatDate(t.authorization_expires_at)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Autorização vence em menos de {EXPIRING_SOON_DAYS} dias
                             </TooltipContent>
                           </Tooltip>
                         ) : (

@@ -7,13 +7,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Tokens semânticos (shadcn) + aliases legados da identidade Byakugan.
+        // Tokens semânticos (shadcn) + identidade "Forensic Instrument" do Byakugan.
         // Valores definidos como CSS variables em src/index.css (docs/ui.md).
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
-        navy: "hsl(var(--background))",
+        sidebar: "hsl(var(--sidebar))",
         surface: "hsl(var(--card))",
-        "surface-2": "hsl(var(--surface-2))",
+        "surface-raised": "hsl(var(--popover))",
+        "surface-subtle": "hsl(var(--muted))",
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
@@ -42,12 +43,14 @@ export default {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
-        danger: "hsl(var(--destructive))",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         "sev-high": "hsl(var(--sev-high))",
+        "sev-low": "hsl(var(--sev-low))",
         "sev-info": "hsl(var(--sev-info))",
+        dim: "hsl(var(--dim))",
         border: "hsl(var(--border))",
+        "border-strong": "hsl(var(--border-strong))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
       },
@@ -58,15 +61,12 @@ export default {
       },
       fontFamily: {
         sans: ["Inter Variable", "Inter", "system-ui", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Consolas", "monospace"],
       },
       boxShadow: {
-        glow: "0 0 24px -4px rgba(0, 212, 255, 0.45)",
-        "glow-accent": "0 0 24px -4px rgba(200, 182, 255, 0.45)",
-        glass: "0 8px 32px -8px rgba(0, 0, 0, 0.35)",
-      },
-      backgroundImage: {
-        "radial-glow":
-          "radial-gradient(circle at 50% 0%, rgba(0,212,255,0.10), transparent 60%)",
+        // Elevação discreta: contraste de superfície/borda, não glow neon.
+        glow: "0 0 0 1px hsl(var(--primary) / 0.28)",
+        glass: "0 1px 2px rgba(0, 0, 0, 0.3)",
       },
       keyframes: {
         "accordion-down": {

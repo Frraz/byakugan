@@ -1382,6 +1382,111 @@ def test_web_scan_detects_weak_csp(monkeypatch):
     assert any("unsafe-inline" in f.data["title"] for f in findings)
 
 
+def test_web_scan_detects_shiro_remember_me_cookie(monkeypatch):
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            cookies = [
+                {
+                    "name": "rememberMe",
+                    "value": "anything",
+                    "secure": True,
+                    "httponly": True,
+                    "samesite": "Strict",
+                }
+            ]
+            return 200, {"Content-Type": "text/html"}, "<html>home</html>", cookies, 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [
+        r for r in results if r.data.get("playbook_key") == "integrity.java-deserialization"
+    ]
+    assert len(findings) == 1
+    assert "rememberMe" in findings[0].data["evidence"]
+
+
+def test_web_scan_detects_php_serialized_object_in_body(monkeypatch):
+    home_html = (
+        '<html><body><!-- debug: O:8:"stdClass":1:{s:4:"name";s:5:"alice";} --></body></html>'
+    )
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [
+        r for r in results if r.data.get("playbook_key") == "integrity.php-object-injection"
+    ]
+    assert len(findings) == 1
+
+
+def test_web_scan_detects_unencrypted_viewstate(monkeypatch):
+    home_html = (
+        '<html><body><form action="/default.aspx" method="POST">'
+        '<input type="hidden" name="__VIEWSTATE" value="/wEPDwUKMTI4NDE2NDk3">'
+        '<input type="submit" value="Go"></form></body></html>'
+    )
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    findings = [r for r in results if r.data.get("playbook_key") == "integrity.viewstate-exposed"]
+    assert len(findings) == 1
+
+
 def test_web_scan_skips_unreachable_ports(monkeypatch):
     monkeypatch.setattr(WebScanAdapter, "_fetch", lambda self, url, **kwargs: None)
     context = ScanContext(
@@ -1413,6 +1518,94 @@ def test_web_scan_respects_cancellation():
     )
     with pytest.raises(ScanCancelled):
         WebScanAdapter().run("empresa.com", context)
+
+
+def test_web_scan_rejects_boolean_sqli_signal_that_does_not_reproduce(monkeypatch):
+    """Disciplina de red team sênior: um sinal booleano que aparece só na 1ª
+    amostra (ruído/dinamismo da página) e NÃO se repete na reconfirmação não
+    deve virar finding — só a amostra inicial seria um falso positivo clássico.
+    """
+    home_html = '<html><body><a href="/item?id=5">item</a></body></html>'
+    baseline_body = "baseline-like short page"
+    different_body = "a totally different and much longer page than before, every single time"
+    true_call_count = {"n": 0}
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import parse_qs, urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        if parts.path == "/item":
+            value = parse_qs(parts.query).get("id", [""])[0]
+            if "1'='1" in value:
+                true_call_count["n"] += 1
+                # 1ª amostra parece confirmar (igual ao baseline, por ruído);
+                # a reconfirmação já não reproduz o mesmo padrão.
+                if true_call_count["n"] == 1:
+                    return 200, {}, baseline_body, [], 0.05
+                return 200, {}, different_body, [], 0.05
+            if "1'='2" in value:
+                return 200, {}, different_body, [], 0.05
+            return 200, {}, baseline_body, [], 0.05
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    assert not any(r.data.get("playbook_key") == "injection.sqli-boolean" for r in results)
+    # A reconfirmação de fato rodou (2ª chamada ao payload verdadeiro).
+    assert true_call_count["n"] >= 2
+
+
+def test_web_scan_confirms_boolean_sqli_signal_that_reproduces(monkeypatch):
+    """Contraprova do teste anterior: um sinal que SE REPETE na
+    reconfirmação deve continuar sendo reportado normalmente."""
+    home_html = '<html><body><a href="/item?id=5">item</a></body></html>'
+    baseline_body = "baseline-like short page"
+    different_body = "a totally different and much longer page than before, every single time"
+
+    def fake_fetch(self, url, *, method="GET", headers=None, allow_redirects=True):
+        from urllib.parse import parse_qs, urlsplit
+
+        parts = urlsplit(url)
+        if parts.netloc != "testsite.local:80":
+            return None
+        if parts.path == "/" and method == "GET":
+            return 200, {"Content-Type": "text/html"}, home_html, [], 0.05
+        if parts.path == "/" and method in ("OPTIONS", "TRACE"):
+            return 200, {}, "", [], 0.02
+        if parts.path == "/item":
+            value = parse_qs(parts.query).get("id", [""])[0]
+            if "1'='1" in value:
+                return 200, {}, baseline_body, [], 0.05
+            if "1'='2" in value:
+                return 200, {}, different_body, [], 0.05
+            return 200, {}, baseline_body, [], 0.05
+        return 404, {}, "Not Found", [], 0.05
+
+    monkeypatch.setattr(WebScanAdapter, "_fetch", fake_fetch)
+    context = ScanContext(
+        scan_id="x",
+        authorized_by="CISO",
+        authorization_scope="testsite.local",
+        options={"intensity": "normal", "max_pages": 5, "rate_delay": 0},
+    )
+
+    results = WebScanAdapter().run("testsite.local", context)
+
+    assert any(r.data.get("playbook_key") == "injection.sqli-boolean" for r in results)
 
 
 def test_web_scan_caps_injection_points(monkeypatch):

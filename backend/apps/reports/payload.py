@@ -16,7 +16,8 @@ from django.utils import timezone
 from apps.assets.models import Asset
 from apps.knowledge.services import find_article_for_category
 from apps.scans.adapters import get_adapters_for
-from apps.scans.correlation import compute_asset_risk, compute_heatmap, compute_risk
+from apps.scans.correlation import compute_asset_risk, compute_chains, compute_heatmap, compute_risk
+from apps.scans.mitre import resolve_mitre
 from apps.scans.models import Evidence, Finding, FindingTriage, Scan
 from apps.scans.owasp_coverage import compute_owasp_coverage
 
@@ -180,6 +181,105 @@ def build_owasp_coverage(scan: Scan) -> dict[str, Any]:
     )
 
 
+#: Ordem de gravidade dos impactos *comprovados* (``Evidence.impact_level``)
+#: — usada só para ordenar a narrativa (mais grave primeiro), nunca para
+#: calcular risk_score (isso é papel do Correlation Engine).
+_IMPACT_RANK: dict[str, int] = {
+    "rce": 7,
+    "db-read": 6,
+    "auth-bypass": 5,
+    "file-read": 4,
+    "ssrf": 3,
+    "session": 2,
+    "info-disclosure": 1,
+    "none": 0,
+}
+
+
+def build_attack_narrative(scan: Scan) -> list[dict[str, Any]]:
+    """Narrativa de ataque por ativo: como um atacante encadearia o que foi **provado**.
+
+    Diferente de ``build_findings_section`` (lista plana de findings), esta
+    é a seção "Attack Narrative"/"Kill Chain" que um pentester sênior
+    escreveria manualmente: por ativo, os passos **comprovados**
+    (``Evidence.status == proven``, nunca especulação sobre findings não
+    explorados) em ordem de impacto, a técnica MITRE ATT&CK de cada passo
+    (``mitre.resolve_mitre``) e as cadeias de risco do Correlation Engine
+    (``correlation.compute_chains``) que se aplicam ao ativo.
+
+    Honestidade por design: um ativo só aparece aqui se tiver ao menos uma
+    `Evidence` `proven` — a narrativa é sobre o que o Byakugan de fato
+    demonstrou, não sobre o que um finding meramente detectado "poderia"
+    permitir (isso já está em ``build_findings_section``/`recommendation`).
+    """
+    evidences = (
+        scan.evidences.filter(status=Evidence.Status.PROVEN)
+        .select_related("asset", "finding")
+        .order_by("asset_id", "-created_at")
+    )
+    if not evidences:
+        return []
+
+    by_asset: dict[str, dict[str, Any]] = {}
+    for ev in evidences:
+        asset_id = str(ev.asset_id)
+        entry = by_asset.setdefault(
+            asset_id,
+            {
+                "asset": _asset_label(ev.asset),
+                "steps": [],
+                "techniques": set(),
+                "max_impact": "none",
+            },
+        )
+        technique, technique_name = resolve_mitre(ev.playbook_key)
+        entry["steps"].append(
+            {
+                "title": ev.finding.title if ev.finding else ev.playbook_key,
+                "playbook_key": ev.playbook_key,
+                "impact_level": ev.impact_level,
+                "proof": ev.proof,
+                "mitre_technique": technique,
+                "mitre_technique_name": technique_name,
+            }
+        )
+        if technique:
+            entry["techniques"].add(technique)
+        if _IMPACT_RANK.get(ev.impact_level, 0) > _IMPACT_RANK.get(entry["max_impact"], 0):
+            entry["max_impact"] = ev.impact_level
+
+    excluded_dedup_keys = set(
+        FindingTriage.objects.filter(status__in=FindingTriage.RESOLVED_STATUSES).values_list(
+            "dedup_key", flat=True
+        )
+    )
+    chain_rows = list(
+        scan.findings.values(
+            "asset_id", "asset__ip", "asset__hostname", "asset__domain", "playbook_key", "dedup_key"
+        )
+    )
+    chains_by_asset: dict[str, list[dict[str, Any]]] = {}
+    for chain in compute_chains(chain_rows, excluded_dedup_keys=excluded_dedup_keys):
+        chains_by_asset.setdefault(chain["asset"], []).append(chain)
+
+    narrative = [
+        {
+            "asset": entry["asset"],
+            "max_impact": entry["max_impact"],
+            "steps": sorted(
+                entry["steps"],
+                key=lambda s: _IMPACT_RANK.get(s["impact_level"], 0),
+                reverse=True,
+            ),
+            "mitre_techniques": sorted(entry["techniques"]),
+            "chains": chains_by_asset.get(asset_id, []),
+        }
+        for asset_id, entry in by_asset.items()
+    ]
+    narrative.sort(key=lambda n: _IMPACT_RANK.get(n["max_impact"], 0), reverse=True)
+    return narrative
+
+
 def build_scan_metadata(scan: Scan) -> dict[str, Any]:
     """Metadados de execução do scan (relatório técnico)."""
     return {
@@ -257,5 +357,6 @@ def build_report_payload(scan: Scan, report_type: str) -> dict[str, Any]:
         payload["findings"] = build_findings_section(scan)
         payload["knowledge_articles"] = build_related_knowledge(scan)
         payload["references"] = build_references(scan)
+        payload["attack_narrative"] = build_attack_narrative(scan)
 
     return payload

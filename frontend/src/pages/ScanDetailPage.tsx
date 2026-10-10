@@ -9,12 +9,14 @@ import { PageHeader } from "@/components/PageHeader";
 import { EvidenceStatusBadge, ImpactBadge } from "@/components/evidence/ImpactBadge";
 import { ExploitationTimeline } from "@/components/evidence/ExploitationTimeline";
 import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
+import { OwaspCoverageMatrix } from "@/components/scans/OwaspCoverageMatrix";
 import { ScanDeleteDialog } from "@/components/scans/ScanDeleteDialog";
 import { ScanProgress } from "@/components/scans/ScanProgress";
 import { ScanTypeBadge } from "@/components/scans/ScanTypeBadge";
 import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { GlassPanel } from "@/components/ui/glass-panel";
@@ -27,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useCancelScan,
   useEvidence,
+  useOwaspCoverage,
   useScan,
   useScanFindings,
   useScanServices,
@@ -74,6 +77,7 @@ export function ScanDetailPage() {
   const findings = useScanFindings(id);
   const services = useScanServices(id);
   const evidence = useEvidence({ scan: id });
+  const owaspCoverage = useOwaspCoverage(id);
 
   const [selected, setSelected] = useState<Finding | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -225,6 +229,7 @@ export function ScanDetailPage() {
           <TabsTrigger value="findings">Findings ({findingList.length})</TabsTrigger>
           <TabsTrigger value="services">Serviços ({services.data?.length ?? 0})</TabsTrigger>
           <TabsTrigger value="evidence">Evidências ({evidence.data?.count ?? 0})</TabsTrigger>
+          <TabsTrigger value="owasp">Cobertura OWASP</TabsTrigger>
           <TabsTrigger value="authorization">Autorização</TabsTrigger>
         </TabsList>
 
@@ -342,9 +347,12 @@ export function ScanDetailPage() {
                     </span>
                   </div>
                   {ev.proof && (
-                    <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/5 p-2 font-mono text-xs text-foreground/90">
-                      {ev.proof}
-                    </pre>
+                    <div className="relative">
+                      <CopyButton value={ev.proof} label="Copiar prova" className="absolute right-1 top-1" />
+                      <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/5 p-2 pr-9 font-mono text-xs text-foreground/90">
+                        {ev.proof}
+                      </pre>
+                    </div>
                   )}
                   {ev.steps_performed.length > 0 && <ExploitationTimeline steps={ev.steps_performed} />}
                   <Link
@@ -356,6 +364,16 @@ export function ScanDetailPage() {
                 </GlassPanel>
               ))}
             </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="owasp" className="mt-4">
+          {owaspCoverage.isLoading ? (
+            <Skeleton className="h-64 w-full rounded-2xl" />
+          ) : owaspCoverage.isError || !owaspCoverage.data ? (
+            <ErrorBanner message="Não foi possível carregar a cobertura OWASP deste scan." />
+          ) : (
+            <OwaspCoverageMatrix coverage={owaspCoverage.data} />
           )}
         </TabsContent>
 
@@ -396,6 +414,7 @@ export function ScanDetailPage() {
         open={cancelling}
         onOpenChange={setCancelling}
         title="Cancelar scan"
+        description="O cancelamento é cooperativo: o Byakugan sinaliza a interrupção, mas a fase em andamento pode levar alguns instantes para parar. Resultados já coletados até esse ponto são preservados."
         confirmLabel="Cancelar scan"
         cancelLabel="Voltar"
         variant="destructive"

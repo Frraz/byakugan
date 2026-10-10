@@ -189,6 +189,12 @@ class Finding(BaseModel):
     #: CWE primário (ex.: ``"CWE-89"``). Torna o CWE consultável de primeira
     #: classe no finding (antes só existia como link de texto no playbook).
     cwe = models.CharField(max_length=16, blank=True, default="")
+    #: Técnica MITRE ATT&CK primária (ex.: ``"T1190"``), fonte única
+    #: ``apps/scans/mitre.py``, derivada de ``playbook_key`` no mesmo lugar
+    #: que OWASP/CWE. Terceira dimensão de classificação — a linguagem comum
+    #: entre red/blue/purple team. Vazio quando a classe não tem uma técnica
+    #: ATT&CK inequívoca mapeada (honestidade, não lacuna escondida).
+    mitre_technique = models.CharField(max_length=20, db_index=True, blank=True, default="")
     #: Chave estável da classe de vulnerabilidade (ex.: ``injection.sqli-error``,
     #: ``exposure.git``, ``credential.default``) — Fase 7+. Liga o finding ao
     #: ``ExploitationPlaybook`` curado (aba Evidências) e ao ``ExploitModule``
@@ -321,6 +327,15 @@ class ExploitationPlaybook(BaseModel):
     #: Ferramentas típicas (ex.: ``["sqlmap", "Burp Suite", "curl"]``).
     tools = models.JSONField(default=list, blank=True)
     references = models.JSONField(default=list, blank=True)
+    #: Regra de detecção (formato **Sigma** — YAML, padrão aberto suportado por
+    #: Splunk/Elastic/Sentinel/Chronicle) que um SOC pode implantar para
+    #: detectar, nos próprios logs, o ataque que esta classe comprova. É o lado
+    #: "purple team" do playbook: o Byakugan não apenas prova a falha (red
+    #: team) — também entrega ao time de defesa (blue team) o artefato pronto
+    #: para detectá-la. ``blank=True``: nem toda classe tem uma assinatura de
+    #: log genérica e confiável (ex.: falhas puramente de configuração sem
+    #: payload observável, como CSP fraca).
+    detection_rule = models.TextField(blank=True, default="")
 
     def __str__(self) -> str:
         return f"{self.title} ({self.key})"

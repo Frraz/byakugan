@@ -4,6 +4,8 @@
 
 > O OWASP Top 10 é o **primeiro marco mensurável** rumo ao norte do projeto (cobrir cada brecha explorável). A matriz por edição torna o progresso auditável: ampliar a cobertura de A01–A10 (e depois CWE Top 25 e além) é uma frente contínua do roadmap (`docs/roadmap.md` → Visão de longo prazo).
 
+> Desde a Fase C11, todo `Finding` também carrega uma **terceira dimensão** complementar — a técnica **MITRE ATT&CK** primária (`mitre_technique`, RN027, fonte única [`mitre.py`](../backend/apps/scans/mitre.py)). É a mesma disciplina de honestidade por classe, com cobertura deliberadamente parcial (27 de 42). Ver `docs/scanning-engine.md` (seção "Terceira dimensão: MITRE ATT&CK").
+
 ## 1. Por que duas edições
 
 O Byakugan classifica **todo finding** nas duas edições vigentes do OWASP Top 10, porque elas divergem de forma relevante e ambas são usadas no mercado:
@@ -40,7 +42,7 @@ Legenda de cobertura: ✅ detecção ativa + prova · 🟢 detecção ativa (sem
 | A05 Security Misconfiguration | 🟢 | headers, **qualidade de CSP** (`web/passive.analyze_csp_quality`), exposição (`web/exposure`), source map exposto, introspecção GraphQL (`web/graphql_checks`), referência a cloud storage (`web/cloud_exposure`, sem requisitar o bucket), documentação de API exposta (Swagger/OpenAPI), métodos HTTP, CORS, debug/stack trace, default creds | `exposure.*`, `credential.default`, `cors.misconfig`, `misconfig.weak-csp` | 16, 200, 209, 215, 489, 540, 693, 942 |
 | A06 Vulnerable & Outdated Components | 🟢 | CVE via NVD (`cve.py`), bibliotecas JS desatualizadas (`web/integrity`) | — | 1104, 1035 |
 | A07 Identification & Auth Failures | ✅ | credenciais default, enumeração de usuário, JWT fraco (`web/auth_checks`) | `credential.default`, `auth.user-enumeration`, `auth.jwt-weak` | 204, 307, 347, 614, 1392 |
-| A08 Software & Data Integrity Failures | 🟢 | SRI ausente (`web/integrity`) | — | 353, 494 |
+| A08 Software & Data Integrity Failures | 🟢 | SRI ausente (`web/integrity`), marcadores de desserialização insegura — objeto Java/Shiro, PHP Object Injection, ASP.NET ViewState (`web/deserialization`) | — | 353, 494, 502 |
 | A09 Security Logging & Monitoring Failures | ⚠️ | sinal indireto (debug/verbose error) | — | 778 |
 | A10 SSRF | ✅ | SSRF (`web/injection`) | `injection.ssrf` | 918 |
 

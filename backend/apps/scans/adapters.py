@@ -1356,8 +1356,9 @@ WEB_MAX_BODY_CHARS = 200_000
 CORS_PROBE_ORIGIN = "https://byakugan-cors-probe.invalid"
 #: Máximo de pontos de injeção (url, parâmetro) testados por origem — cada
 #: um gera várias requisições (9 checks de requisição única + 3 pares
-#: booleanos SQLi/NoSQLi/LDAP + eventualmente time-based); sem este teto, um
-#: site com muitos parâmetros tornaria o scan impraticável.
+#: booleanos SQLi/NoSQLi/LDAP, +1 par de reconfirmação cada quando um sinal
+#: aparece, + eventualmente time-based); sem este teto, um site com muitos
+#: parâmetros tornaria o scan impraticável.
 MAX_INJECTION_POINTS = 15
 #: Máximo de tokens JWT únicos analisados por origem (decodificação local,
 #: sem rede — o teto existe só para manter o custo de CPU previsível).
@@ -1417,6 +1418,7 @@ class WebScanAdapter(ScannerAdapter):
         cookies = [
             {
                 "name": cookie.name,
+                "value": cookie.value,
                 "secure": cookie.secure,
                 "httponly": cookie.has_nonstandard_attr("HttpOnly")
                 or cookie.has_nonstandard_attr("httponly"),
@@ -1509,6 +1511,15 @@ class WebScanAdapter(ScannerAdapter):
                 results.append(self._make_finding(finding, target=target, ip=ip))
         for finding in web.passive.analyze_cookies(cookies, is_https=is_https):
             results.append(self._make_finding(finding, target=target, ip=ip))
+        # A08 Integrity: cookie com objeto Java serializado (ex.: 'rememberMe'
+        # do Apache Shiro) — só a home page tem a lista de cookies já
+        # corretamente parseada (``response.cookies``, não o crawl).
+        java_cookie_finding = web.deserialization.detect_java_serialized_cookie(cookies)
+        if java_cookie_finding:
+            results.append(self._make_finding(java_cookie_finding, target=target, ip=ip))
+        php_cookie_finding = web.deserialization.detect_php_serialized_cookie(cookies)
+        if php_cookie_finding:
+            results.append(self._make_finding(php_cookie_finding, target=target, ip=ip))
         listing_finding = web.passive.analyze_directory_listing(base_url, body)
         if listing_finding:
             results.append(self._make_finding(listing_finding, target=target, ip=ip))
@@ -1716,6 +1727,44 @@ class WebScanAdapter(ScannerAdapter):
                 results.append(self._make_finding(finding, target=target, ip=ip))
         return results
 
+    def _run_deserialization(
+        self, crawl_result: Any, target: str, ip: str | None
+    ) -> list[RawResult]:
+        """Marcadores de desserialização insegura (A08) — puramente passivo, sem rede.
+
+        Varre o corpo de **todas** as páginas já rastreadas pelo crawl (zero
+        requisições extras) por assinaturas de objeto Java/PHP serializado, e
+        os formulários por ASP.NET ViewState sem criptografia explícita.
+        Deduplicado por classe (um finding de cada tipo já basta por origem —
+        evita inundar o relatório se o marcador aparecer em muitas páginas).
+        """
+        from . import web
+
+        results: list[RawResult] = []
+        seen_classes: set[str] = set()
+        for page in crawl_result.pages:
+            java_finding = web.deserialization.detect_java_serialized_in_body(
+                url=page.url, body=page.body
+            )
+            if java_finding and "java" not in seen_classes:
+                seen_classes.add("java")
+                results.append(self._make_finding(java_finding, target=target, ip=ip))
+            php_finding = web.deserialization.detect_php_serialized_in_body(
+                url=page.url, body=page.body
+            )
+            if php_finding and "php" not in seen_classes:
+                seen_classes.add("php")
+                results.append(self._make_finding(php_finding, target=target, ip=ip))
+
+        for form in crawl_result.forms:
+            viewstate_finding = web.deserialization.detect_viewstate(
+                url=form.get("action", ""), form=form
+            )
+            if viewstate_finding:
+                results.append(self._make_finding(viewstate_finding, target=target, ip=ip))
+                break  # um finding informativo já basta por origem
+        return results
+
     def _run_exposure(self, base_url: str, target: str, ip: str | None) -> list[RawResult]:
         from urllib.parse import urljoin
 
@@ -1829,6 +1878,70 @@ class WebScanAdapter(ScannerAdapter):
                 results.append(self._make_finding(finding, target=target, ip=ip))
         return results
 
+    def _reconfirm_sqli_boolean(
+        self, url: str, param: str, true_payload: str, false_payload: str, baseline_body: str
+    ) -> bool:
+        """Refaz o par verdadeiro/falso e exige que o sinal se repita.
+
+        Disciplina de red team sênior: um único par verdadeiro/falso pode
+        coincidir por ruído de página dinâmica (ex.: conteúdo que muda a
+        cada request independente de qualquer injeção) — só reporta se a
+        MESMA assinatura condicional aparecer de novo numa segunda amostra
+        independente.
+        """
+        from . import web
+
+        true_probed = self._fetch(web.injection.build_injected_url(url, param, true_payload))
+        false_probed = self._fetch(web.injection.build_injected_url(url, param, false_payload))
+        if not (true_probed and false_probed):
+            return False
+        return (
+            web.injection.detect_boolean_sqli(
+                true_body=true_probed[2], false_body=false_probed[2], baseline_body=baseline_body
+            )
+            is not None
+        )
+
+    def _reconfirm_nosqli_boolean(
+        self, url: str, param: str, probe_value: str, baseline_body: str
+    ) -> bool:
+        """Mesma confirmação para NoSQLi — ver ``_reconfirm_sqli_boolean``."""
+        from . import web
+
+        bypass_probed = self._fetch(
+            web.injection.build_nosqli_injected_url(url, param, "$ne", probe_value)
+        )
+        exact_probed = self._fetch(
+            web.injection.build_nosqli_injected_url(url, param, "$eq", probe_value)
+        )
+        if not (bypass_probed and exact_probed):
+            return False
+        return (
+            web.injection.detect_boolean_nosqli(
+                bypass_body=bypass_probed[2],
+                exact_body=exact_probed[2],
+                baseline_body=baseline_body,
+            )
+            is not None
+        )
+
+    def _reconfirm_ldap_boolean(
+        self, url: str, param: str, true_payload: str, false_payload: str, baseline_body: str
+    ) -> bool:
+        """Mesma confirmação para LDAP — ver ``_reconfirm_sqli_boolean``."""
+        from . import web
+
+        true_probed = self._fetch(web.injection.build_injected_url(url, param, true_payload))
+        false_probed = self._fetch(web.injection.build_injected_url(url, param, false_payload))
+        if not (true_probed and false_probed):
+            return False
+        return (
+            web.injection.detect_boolean_ldap(
+                true_body=true_probed[2], false_body=false_probed[2], baseline_body=baseline_body
+            )
+            is not None
+        )
+
     def _run_injection(
         self,
         crawl_result: Any,
@@ -1858,7 +1971,7 @@ class WebScanAdapter(ScannerAdapter):
                     continue
                 status, headers, body, _, _ = probed
                 response = web.injection.ProbeResponse(status, headers, body)
-                evidence = check.run(response)
+                evidence = check.run(response, baseline_body)
                 if evidence:
                     finding = check.to_finding(url=url, param=param, evidence=evidence)
                     results.append(self._make_finding(finding, target=target, ip=ip))
@@ -1893,6 +2006,13 @@ class WebScanAdapter(ScannerAdapter):
                     false_body=false_probed[2],
                     baseline_body=baseline_body,
                 )
+                # Confirmação (disciplina de red team sênior): booleana nunca
+                # se reporta numa única amostra — refaz o par e só conclui se
+                # o sinal se repetir, descartando ruído de página dinâmica.
+                if evidence and not self._reconfirm_sqli_boolean(
+                    url, param, true_payload, false_payload, baseline_body
+                ):
+                    evidence = None
                 if evidence:
                     finding = {
                         "title": "Possível SQL injection (booleana)",
@@ -1922,6 +2042,10 @@ class WebScanAdapter(ScannerAdapter):
                     exact_body=exact_probed[2],
                     baseline_body=baseline_body,
                 )
+                if evidence and not self._reconfirm_nosqli_boolean(
+                    url, param, nosqli_probe_value, baseline_body
+                ):
+                    evidence = None
                 if evidence:
                     finding = {
                         "title": "Possível NoSQL injection (booleana)",
@@ -1954,6 +2078,10 @@ class WebScanAdapter(ScannerAdapter):
                     false_body=ldap_false_probed[2],
                     baseline_body=baseline_body,
                 )
+                if evidence and not self._reconfirm_ldap_boolean(
+                    url, param, ldap_true, ldap_false, baseline_body
+                ):
+                    evidence = None
                 if evidence:
                     finding = {
                         "title": "Possível LDAP injection (booleana)",
@@ -2062,6 +2190,8 @@ class WebScanAdapter(ScannerAdapter):
             results.extend(self._run_source_maps(crawl_result, base_url, target, ip))
             context.check_cancelled()
             results.extend(self._run_cloud_storage(crawl_result, target, ip))
+            context.check_cancelled()
+            results.extend(self._run_deserialization(crawl_result, target, ip))
 
             context.check_cancelled()
             results.extend(self._run_injection(crawl_result, base_url, target, ip, intensity))

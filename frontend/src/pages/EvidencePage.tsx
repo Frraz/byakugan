@@ -8,6 +8,7 @@ import { EvidencePlaybookCard } from "@/components/evidence/EvidencePlaybookCard
 import { ExploitationTimeline } from "@/components/evidence/ExploitationTimeline";
 import { EvidenceStatusBadge, ImpactBadge } from "@/components/evidence/ImpactBadge";
 import { CategoryBadge } from "@/components/ui/category-badge";
+import { CopyButton } from "@/components/ui/copy-button";
 import { DataPagination } from "@/components/ui/data-pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
@@ -71,9 +72,12 @@ function EvidenceDetailSheet({
 
             {evidence.proof && (
               <section className="space-y-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Prova extraída
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Prova extraída
+                  </h3>
+                  <CopyButton value={evidence.proof} label="Copiar prova" />
+                </div>
                 <pre className="thin-scroll max-h-56 overflow-auto whitespace-pre-wrap rounded-xl border border-destructive/30 bg-destructive/5 p-3 font-mono text-xs text-foreground/90">
                   {evidence.proof}
                 </pre>

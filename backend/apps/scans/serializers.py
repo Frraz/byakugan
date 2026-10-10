@@ -140,6 +140,7 @@ class FindingSerializer(serializers.ModelSerializer):
             "owasp_2021",
             "owasp_2025",
             "cwe",
+            "mitre_technique",
             "triage_status",
             "created_at",
         )
@@ -303,6 +304,7 @@ class ExploitationPlaybookSerializer(serializers.ModelSerializer):
             "max_impact",
             "tools",
             "references",
+            "detection_rule",
             "created_at",
             "updated_at",
         )

@@ -5,12 +5,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, downloadFile } from "../lib/api";
 import type {
   Asset,
+  AuditLogEntry,
   Evidence,
   ExploitationPlaybook,
   Finding,
   FindingTriage,
   GroupedFinding,
   KnowledgeArticle,
+  OwaspCoverage,
   Paginated,
   Report,
   ReportFormat,
@@ -133,6 +135,15 @@ export function useScanServices(id: string) {
   return useQuery({
     queryKey: ["scan", id, "services"],
     queryFn: () => apiFetch<Service[]>(`/scans/${id}/services/`),
+  });
+}
+
+/** Matriz de cobertura OWASP (2021 + 2025) do scan — testada/encontrada/provada. */
+export function useOwaspCoverage(id: string) {
+  return useQuery({
+    queryKey: ["scan", id, "owasp-coverage"],
+    queryFn: () => apiFetch<OwaspCoverage>(`/scans/${id}/owasp-coverage/`),
+    enabled: Boolean(id),
   });
 }
 
@@ -421,10 +432,33 @@ export function useCreateKnowledgeArticle() {
   });
 }
 
+export function useUpdateKnowledgeArticle() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Partial<CreateKnowledgeArticleInput> }) =>
+      apiFetch<KnowledgeArticle>(`/knowledge-base/${id}/`, { method: "PATCH", body: input }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge-base"] }),
+  });
+}
+
 export function useDeleteKnowledgeArticle() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/knowledge-base/${id}/`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["knowledge-base"] }),
+  });
+}
+
+// --- Auditoria ---
+
+export function useAuditLogs(params?: {
+  action?: string;
+  severity?: string;
+  search?: string;
+  page?: number;
+}) {
+  return useQuery({
+    queryKey: ["audit-logs", params],
+    queryFn: () => apiFetch<Paginated<AuditLogEntry>>("/audit-logs/", { params }),
   });
 }

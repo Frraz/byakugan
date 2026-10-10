@@ -1,7 +1,7 @@
 /** Diálogo de criação de scan — via alvo cadastrado ou inline (RN001/RN002/RN007). */
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Check, Crosshair, Info, Radar, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Check, Crosshair, Info, Radar, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,24 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCreateScan, useTargets } from "@/hooks/useData";
 import { errorMessage } from "@/lib/errors";
+import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Intensity, PortSet } from "@/lib/types";
+import type { Intensity, PortSet, Target } from "@/lib/types";
+
+const EXPIRING_SOON_DAYS = 7;
+
+/** Status de autorização do alvo selecionado — mesma regra usada em TargetsPage. */
+function targetAuthStatus(target: Target): { tone: "destructive" | "warning"; label: string } | null {
+  if (!target.authorization_expires_at) return null;
+  const msRemaining = new Date(target.authorization_expires_at).getTime() - Date.now();
+  if (msRemaining < 0) {
+    return { tone: "destructive", label: `Autorização expirada em ${formatDate(target.authorization_expires_at)}` };
+  }
+  if (msRemaining <= EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000) {
+    return { tone: "warning", label: `Autorização vence em ${formatDate(target.authorization_expires_at)}` };
+  }
+  return null;
+}
 
 const SCAN_TYPES: { value: string; label: string; hint: string }[] = [
   { value: "discovery", label: "Discovery", hint: "Descoberta de hosts, portas, DNS e subdomínios" },
@@ -219,6 +235,8 @@ export function ScanFormDialog({
   );
   const targetLabel =
     mode === "target" ? selectedTarget?.value ?? "—" : inline.target || "—";
+  const selectedTargetExpired =
+    mode === "target" && selectedTarget != null && targetAuthStatus(selectedTarget)?.tone === "destructive";
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -294,24 +312,42 @@ export function ScanFormDialog({
             </Tabs>
 
             {mode === "target" ? (
-              <Select value={targetRef} onValueChange={setTargetRef}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um alvo…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {targets.length === 0 ? (
-                    <div className="px-2 py-3 text-center text-sm text-muted-foreground">
-                      Nenhum alvo ativo cadastrado
-                    </div>
-                  ) : (
-                    targets.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name} — {t.value}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+              <div className="space-y-1.5">
+                <Select value={targetRef} onValueChange={setTargetRef}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um alvo…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {targets.length === 0 ? (
+                      <div className="px-2 py-3 text-center text-sm text-muted-foreground">
+                        Nenhum alvo ativo cadastrado
+                      </div>
+                    ) : (
+                      targets.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name} — {t.value}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedTarget &&
+                  (() => {
+                    const status = targetAuthStatus(selectedTarget);
+                    if (!status) return null;
+                    return (
+                      <p
+                        className={cn(
+                          "flex items-center gap-1.5 text-xs",
+                          status.tone === "destructive" ? "text-destructive" : "text-warning",
+                        )}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                        {status.label}
+                      </p>
+                    );
+                  })()}
+              </div>
             ) : (
               <div className="space-y-3">
                 <div className="space-y-1.5">
@@ -488,10 +524,15 @@ export function ScanFormDialog({
               disabled={
                 create.isPending ||
                 (mode === "target" && !targetRef) ||
-                (mode === "inline" && !inline.target.trim())
+                (mode === "inline" && !inline.target.trim()) ||
+                selectedTargetExpired
               }
             >
-              {create.isPending ? "Enfileirando…" : "Iniciar scan"}
+              {create.isPending
+                ? "Enfileirando…"
+                : selectedTargetExpired
+                  ? "Autorização expirada"
+                  : "Iniciar scan"}
             </Button>
           </DialogFooter>
         </form>

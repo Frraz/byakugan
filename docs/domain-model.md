@@ -23,7 +23,7 @@
 ### Aggregate: Scan (raiz)
 - **Scan** (raiz) — dono do ciclo de vida e da autorização.
 - Entidades filhas: **Finding** (criadas pelo scan), **Evidence** (provas de exploração do scan).
-- Value Objects: `Target`, `Authorization` (`authorized_by` + `scope`), `ScanStatus`, `OwaspClassification` (`owasp_2021` + `owasp_2025` + `cwe`).
+- Value Objects: `Target`, `Authorization` (`authorized_by` + `scope`), `ScanStatus`, `OwaspClassification` (`owasp_2021` + `owasp_2025` + `cwe`), `MitreClassification` (`mitre_technique` — terceira dimensão, cobertura parcial deliberada).
 - Invariantes: RN001, RN002, RN005, RN007, RN008, RN010, RN016, RN024 (todo Finding classificado no OWASP 2021/2025 + CWE).
 
 ### Aggregate: Evidence (raiz / prova de exploração)
@@ -32,13 +32,13 @@
 - Invariantes: RN021 (piso de não-dano), RN022 (gating fail-closed), RN023 (imutável).
 
 ### Aggregate: ExploitationPlaybook (raiz / conteúdo vivo)
-- **ExploitationPlaybook** — guia curado de exploração por classe (`key` == `Finding.playbook_key`): pré-condições, passos de PoC manual, cadeia de escalação, impacto máximo, ferramentas e referências (OWASP 2021/2025 + CWE).
+- **ExploitationPlaybook** — guia curado de exploração por classe (`key` == `Finding.playbook_key`): pré-condições, passos de PoC manual, cadeia de escalação, impacto máximo, ferramentas e referências (OWASP 2021/2025 + CWE). Também carrega o lado **purple team**: `detection_rule`, uma regra Sigma (YAML) para o time de defesa detectar o mesmo ataque nos próprios logs — vazia quando a classe não tem assinatura de log confiável.
 - Conteúdo **editável** (como a Knowledge Base) — RN003 não se aplica (RN023).
 
 ### Aggregate: Asset (raiz)
 - **Asset** (raiz).
-- Entidades filhas: **Service**.
-- Value Objects: `IpAddress`, `Hostname`, `OsFingerprint`.
+- Entidades filhas: **Service**, **Technology** (*technology profile* do fingerprinting — servidor, framework, linguagem, CMS, frontend, banco, TLS, e **WAF/CDN**, categoria sem relação com vulnerabilidade, só contexto de possível falso negativo em detecção web).
+- Value Objects: `IpAddress`, `Hostname`, `OsFingerprint`, `TechnologyCategory`, `Confidence`.
 
 ### Aggregate: Vulnerability (raiz / catálogo)
 - **Vulnerability** — referência compartilhável (CVE).
@@ -63,6 +63,9 @@ Registro imutável de eventos (RN011). Não pertence a um agregado de negócio; 
 | `Cvss` | Score 0.0–10.0 + vetor opcional. |
 | `ImpactLevel` | Impacto **comprovado** por exploração: rce/db-read/file-read/auth-bypass/ssrf/info-disclosure/session/none. |
 | `OwaspClassification` | `owasp_2021` + `owasp_2025` (A01–A10 de cada edição) + `cwe` primário; derivada da classe/categoria (RN024). |
+| `MitreClassification` | `mitre_technique` (ex.: `T1190`) — derivada só do `playbook_key` (RN027); vazio quando a classe não tem técnica ATT&CK inequívoca. |
+| `TechnologyCategory` | Enum: os/web-server/framework/language/frontend/cms/database/tls/**waf**/**cdn**/other. |
+| `Confidence` | Enum: high/medium/low — confiança da identificação de uma `Technology`. |
 
 ## Relações entre agregados
 - `Scan` referencia `Asset` e `Vulnerability` **por identidade** (IDs), não por composição direta, mantendo os agregados desacoplados.
@@ -70,11 +73,12 @@ Registro imutável de eventos (RN011). Não pertence a um agregado de negócio; 
 
 ## Linguagem ubíqua (glossário)
 - **Asset**: host/serviço descoberto no ambiente.
+- **Technology**: item do *technology profile* de um ativo (servidor/framework/CMS/TLS/WAF/CDN...), com evidência e confiança — não é vulnerabilidade, é contexto.
 - **Scan**: execução de análise autorizada sobre um alvo.
 - **Finding**: ocorrência concreta de vulnerabilidade num ativo.
 - **Vulnerability**: entrada de catálogo (geralmente um CVE).
 - **Risk Score**: métrica derivada dos findings (CVSS + exposição + criticidade).
 - **Evidence**: prova imutável do que o motor de exploração de fato executou e comprovou sobre um finding (o "até onde o Byakugan foi").
-- **ExploitationPlaybook**: guia curado (vivo) de como explorar manualmente uma classe e "até onde dá para ir" (cadeia de escalação).
+- **ExploitationPlaybook**: guia curado (vivo) de como explorar manualmente uma classe e "até onde dá para ir" (cadeia de escalação) — e, quando possível, a regra de detecção (Sigma) correspondente para o blue team.
 - **Impact Level**: nível de impacto *comprovado* por exploração (distinto da severidade teórica).
 - **OWASP category**: categoria do OWASP Top 10 (edições 2021 e 2025) atribuída a um finding, com o CWE primário.

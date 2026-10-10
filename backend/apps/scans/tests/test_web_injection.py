@@ -77,6 +77,14 @@ def test_sqli_error_not_detected_in_clean_response():
     assert check.run(ProbeResponse(200, {}, "<html>Normal page, id=49</html>")) is None
 
 
+def test_sqli_error_does_not_false_positive_when_signature_already_in_baseline():
+    """Ex.: uma página de documentação/erro estático que sempre menciona uma
+    mensagem de erro de banco não vira achado só porque reaparece após o payload."""
+    check = _check("sqli-error")
+    body = "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version"
+    assert check.run(ProbeResponse(200, {}, body), body) is None
+
+
 # --- Path traversal -----------------------------------------------------
 
 
@@ -136,6 +144,24 @@ def test_ssti_does_not_false_positive_on_embedded_digits():
     assert check.run(ProbeResponse(200, {}, "<html>Price: $149.00</html>")) is None
 
 
+def test_ssti_does_not_false_positive_when_49_already_in_baseline():
+    """Disciplina de red team: '49' mundano no baseline (ex.: contador da
+    página) não pode virar SSTI só porque também aparece na resposta injetada
+    — sem essa comparação, QUALQUER página com 'Mostrando 49 resultados' (ou
+    qualquer número 49 estático) seria um falso positivo garantido."""
+    check = _check("ssti-dollar")
+    baseline = "<html>Mostrando 49 resultados</html>"
+    injected = "<html>Mostrando 49 resultados</html>"  # payload não teve efeito algum
+    assert check.run(ProbeResponse(200, {}, injected), baseline) is None
+
+
+def test_ssti_still_detects_when_49_absent_from_baseline():
+    check = _check("ssti-dollar")
+    baseline = "<html>Mostrando 12 resultados</html>"
+    injected = "<html>Result: 49</html>"
+    assert check.run(ProbeResponse(200, {}, injected), baseline) is not None
+
+
 # --- Command injection ------------------------------------------------
 
 
@@ -148,6 +174,41 @@ def test_command_injection_detects_id_output():
 def test_command_injection_not_detected_in_clean_response():
     check = _check("command-injection")
     assert check.run(ProbeResponse(200, {}, "<html>Command not found</html>")) is None
+
+
+def test_command_injection_does_not_false_positive_when_output_already_in_baseline():
+    """Uma página que SEMPRE mostra 'uid=0(root) gid=0(root)' (ex.: uma
+    doc/exemplo estático) não vira achado só porque o texto também aparece
+    na resposta ao payload injetado."""
+    check = _check("command-injection")
+    body = "uid=0(root) gid=0(root) groups=0(root)"
+    assert check.run(ProbeResponse(200, {}, body), body) is None
+
+
+# --- SSRF ----------------------------------------------------------------
+
+
+def test_ssrf_detects_cloud_metadata_markers():
+    check = _check("ssrf")
+    assert check.run(ProbeResponse(200, {}, "ami-id: ami-0abcd1234")) is not None
+    assert check.run(ProbeResponse(200, {}, '{"instance-id": "i-0123"}')) is not None
+
+
+def test_ssrf_not_detected_in_clean_response():
+    check = _check("ssrf")
+    assert check.run(ProbeResponse(200, {}, "<html>Normal page</html>")) is None
+
+
+def test_ssrf_does_not_false_positive_when_marker_already_in_baseline():
+    """'meta-data/' isolado é genérico o bastante pra aparecer num path não
+    relacionado (ex.: uma API que documenta seu próprio endpoint
+    '/meta-data/schema') — baseline idêntico não pode virar SSRF."""
+    check = _check("ssrf")
+    body = "see /meta-data/ for the schema reference"
+    assert check.run(ProbeResponse(200, {}, body), body) is None
+
+
+# --- CRLF Injection ----------------------------------------------------
 
 
 def test_crlf_injection_detects_genuine_extra_header():
