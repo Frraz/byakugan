@@ -33,13 +33,13 @@ Legenda de cobertura: ✅ detecção ativa + prova · 🟢 detecção ativa (sem
 
 | Cat. 2021 | Cobertura | Detectores (adapters/checks) | Prova (ExploitModule) | CWE principais |
 | --- | --- | --- | --- | --- |
-| A01 Broken Access Control | ✅ | forced browsing (`web/access_control`), IDOR, path traversal, open redirect | `access-control.forced-browsing`, `access-control.idor`, `injection.path-traversal` | 22, 425, 601, 639 |
+| A01 Broken Access Control | ✅ | forced browsing (`web/access_control`), IDOR, CSRF (`web/csrf`), path traversal, open redirect | `access-control.forced-browsing`, `access-control.idor`, `access-control.csrf`, `injection.path-traversal` | 22, 352, 425, 601, 639 |
 | A02 Cryptographic Failures | 🟢 | TLS/cert (`tls_analysis`), cookies inseguros, login sobre HTTP, mixed content | — | 295, 319, 327, 614 |
-| A03 Injection | ✅ | SQLi (erro/booleana/tempo), XSS, SSTI, command injection (`web/injection`) | `injection.sqli-*`, `injection.xss`, `injection.ssti`, `injection.command-injection` | 78, 79, 89, 1336 |
+| A03 Injection | ✅ | SQLi (erro/booleana/tempo), XSS, SSTI, command injection, Host Header Injection, NoSQL/LDAP injection booleanas, CRLF Injection (`web/injection`) | `injection.sqli-*`, `injection.xss`, `injection.ssti`, `injection.command-injection`, `injection.host-header`, `injection.nosqli`, `injection.ldap`, `injection.crlf` | 20, 78, 79, 89, 90, 93, 943, 1336 |
 | A04 Insecure Design | ⚠️ | — (exige revisão de design) | — | — |
-| A05 Security Misconfiguration | 🟢 | headers, exposição (`web/exposure`), métodos HTTP, CORS, debug/stack trace, default creds | `exposure.*`, `credential.default`, `cors.misconfig` | 16, 200, 209, 489, 942 |
+| A05 Security Misconfiguration | 🟢 | headers, **qualidade de CSP** (`web/passive.analyze_csp_quality`), exposição (`web/exposure`), source map exposto, introspecção GraphQL (`web/graphql_checks`), referência a cloud storage (`web/cloud_exposure`, sem requisitar o bucket), documentação de API exposta (Swagger/OpenAPI), métodos HTTP, CORS, debug/stack trace, default creds | `exposure.*`, `credential.default`, `cors.misconfig`, `misconfig.weak-csp` | 16, 200, 209, 215, 489, 540, 693, 942 |
 | A06 Vulnerable & Outdated Components | 🟢 | CVE via NVD (`cve.py`), bibliotecas JS desatualizadas (`web/integrity`) | — | 1104, 1035 |
-| A07 Identification & Auth Failures | ✅ | credenciais default, enumeração de usuário (`web/auth_checks`) | `credential.default`, `auth.user-enumeration` | 204, 307, 614, 1392 |
+| A07 Identification & Auth Failures | ✅ | credenciais default, enumeração de usuário, JWT fraco (`web/auth_checks`) | `credential.default`, `auth.user-enumeration`, `auth.jwt-weak` | 204, 307, 347, 614, 1392 |
 | A08 Software & Data Integrity Failures | 🟢 | SRI ausente (`web/integrity`) | — | 353, 494 |
 | A09 Security Logging & Monitoring Failures | ⚠️ | sinal indireto (debug/verbose error) | — | 778 |
 | A10 SSRF | ✅ | SSRF (`web/injection`) | `injection.ssrf` | 918 |

@@ -67,6 +67,24 @@
 - [x] Endpoints (`POST /scans/{id}/exploit/`, `GET /evidence/`, `GET/POST /playbooks/`) + gatilho inline no `run_scan`
 - [x] Testes puros de RoE e de extração por módulo (fetch falso, sem rede/banco)
 
+## Cobertura expandida de detecção (pós-V1, Fase C)
+- [x] CSRF (`web/csrf.py` — puramente estático sobre formulários POST já rastreados, sem token anti-CSRF)
+- [x] JWT fraco (`web/auth_checks.py` — `alg: none`, segredo HS256 comum via HMAC local, `exp` ausente; sem requisição extra)
+- [x] Host Header Injection (`web/injection.py` — GET com header Host trocado, detecta reflexão em Location/corpo)
+- [x] NoSQL injection booleana (`web/injection.py` — operadores MongoDB `$ne`/`$eq` como chave de query string)
+- [x] Exposição de source map (`web/exposure.py` + `web/crawler.py` coleta `<script src>`)
+- [x] Introspecção GraphQL exposta (`web/graphql_checks.py` — GET idempotente, candidatos comuns)
+- [x] 6 novos playbooks curados (migration `0011_seed_expanded_coverage_playbooks.py`) + classificação OWASP/CWE (`owasp.py`)
+- [x] 34 novos testes puros/adapter (CSRF, JWT, Host Header, NoSQLi, source map, GraphQL, extração de `<script>` no crawler)
+- [x] LDAP injection booleana, CRLF Injection/HTTP Response Splitting e referência a cloud storage (S3/GCS/Azure — puramente passivo, nunca requisita o bucket de terceiros) — Fase C2
+- [x] 2º playbook seed (migration `0012_seed_phase_c2_playbooks.py`) + mais 18 testes puros/adapter
+- [x] Qualidade de CSP (unsafe-inline/unsafe-eval/wildcard de origem/object-src/frame-ancestors — zero requisições extras) e exposição de documentação de API (Swagger/OpenAPI) — Fase C3
+- [x] 3º playbook seed (migration `0013_seed_phase_c3_playbooks.py`) + mais 13 testes puros/adapter
+- [x] Fingerprint de WAF/CDN (Cloudflare, Akamai, CloudFront, Sucuri, Incapsula, F5 ASM, FortiWeb, Barracuda, ModSecurity, Wordfence, Azure Front Door, Fastly — `signatures.py`, sem requisição extra); novas categorias `Technology.Category.WAF`/`CDN` (migration `apps/assets/0004`) — contextualiza falsos negativos de injeção
+- [x] Correção de drift no frontend: `FindingCategory` (types.ts + category-badge.tsx) não tinha `access-control`/`auth`/`integrity` (categorias da Fase B nunca propagadas) — teste trava a exaustividade contra o enum do backend
+- [x] 2 novos módulos de exploração (`exploit/source_map.py`, `exploit/graphql.py`) — rebaixam o artefato já identificado e extraem uma amostra real do que foi exposto (caminhos-fonte / nomes de tipo), registrados em `exploit/registry.py`; decisão documentada (`docs/exploitation-engine.md`) de por que CSRF/NoSQLi/LDAP/cloud-storage/api-docs/CSP ficam só com playbook manual por ora
+- [x] 3º módulo de exploração (`exploit/jwt_weak.py`) — resolvido o bloqueio original de "não sabe contra qual endpoint reenviar": detecção agora guarda a página onde o token foi visto (`source_url`), permitindo forjar (`alg: none`/segredo fraco, claims elevadas) e reenviar para provar auth-bypass por mudança observável de comportamento
+
 ## Cobertura OWASP Top 10 (pós-V1)
 - [x] Taxonomia fonte única `apps/scans/owasp.py` (2021 + 2025 + CWE) e `resolve_owasp`
 - [x] Campos `owasp_2021`/`owasp_2025`/`cwe` no `Finding` (migration 0007 + backfill) — RN024; enriquecimento central em `persist_findings`

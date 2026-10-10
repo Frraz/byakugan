@@ -74,7 +74,7 @@ Tecnologia identificada num ativo pelo fingerprinting (Fase 2). Compõe o *techn
 | --- | --- | --- |
 | id | UUID (PK) | |
 | asset | FK → assets | ativo onde a tecnologia foi identificada |
-| category | enum | `os` \| `web-server` \| `framework` \| `language` \| `frontend` \| `cms` \| `database` \| `tls` \| `other` |
+| category | enum | `os` \| `web-server` \| `framework` \| `language` \| `frontend` \| `cms` \| `database` \| `tls` \| `waf` \| `cdn` \| `other` |
 | name | string | ex.: `nginx`, `Django`, `WordPress` |
 | version | string | nullable (ex.: `1.24.0`) |
 | source | string | origem da detecção (`http-header`, `http-cookie`, `html`, `tls`) |
