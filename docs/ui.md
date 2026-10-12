@@ -2,6 +2,16 @@
 
 > Identidade oficial do Byakugan: **"Forensic Instrument"** (ver `PLANO_REDESIGN_BYAKUGAN.md` para o racional completo do redesign). Dark-first na aplicação; os PDFs usam uma composição editorial clara, distinta do tema escuro.
 
+> Ponto de retomada e checklist de aceite: [estado do redesign](redesign-status.md).
+
+## Relatórios e diálogos
+
+Diálogos têm margem lateral, altura limitada à viewport dinâmica e rolagem interna.
+O gerador de relatórios distingue carregamento, erro com nova tentativa e ausência de scans;
+o seletor de scans concluídos é paginado. Campos e filtros têm nomes acessíveis.
+A geração mantém os controles bloqueados até a confirmação do servidor. O preview PDF/JSON
+oferece nova tentativa, download e cabeçalho adaptável; CSV permanece disponível por download.
+
 ## Conceito de marca
 O Byakugan é uma **plataforma de Security Assessment / pentest profissional autorizado**. A marca deve transmitir: precisão, controle, inteligência, maturidade, tecnologia discreta. **Não** cyberpunk, **não** gamer, **não** genérica — uma bancada de trabalho de precisão, não um filme de hackers.
 

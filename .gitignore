@@ -44,3 +44,8 @@ coverage/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Relatórios de QA do navegador
+frontend/test-results/
+frontend/test-results-extra/
+frontend/playwright-report/

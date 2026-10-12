@@ -21,6 +21,8 @@ import { RiskGauge } from "@/components/charts/RiskGauge";
 import { SeverityDonut } from "@/components/charts/SeverityDonut";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorBanner } from "@/components/ui/error-banner";
+import { ScanTypeBadge } from "@/components/scans/ScanTypeBadge";
 import { GlassPanel } from "@/components/ui/glass-panel";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { SeverityBadge } from "@/components/ui/severity-badge";
@@ -28,7 +30,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/ui/stat-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useAssets, useRiskOverview, useScans, useTargets } from "@/hooks/useData";
+import { useAssets, useRiskOverview, useScans, useScansStats, useTargets } from "@/hooks/useData";
+import { usePermissions } from "@/hooks/usePermissions";
+import { errorMessage } from "@/lib/errors";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatRelative } from "@/lib/format";
 
@@ -37,11 +41,12 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const assets = useAssets();
   const scans = useScans();
+  const scanStats = useScansStats();
+  const { canWrite } = usePermissions();
   const targets = useTargets();
   const risk = useRiskOverview(5);
 
   const scanList = scans.data?.results ?? [];
-  const active = scanList.filter((s) => s.status === "running" || s.status === "pending").length;
   const summary = risk.data?.summary;
   const topAssets = risk.data?.top_assets ?? [];
   const severity = summary?.severity ?? { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
@@ -53,12 +58,16 @@ export function DashboardPage() {
         title="Dashboard"
         description="Visão consolidada do ambiente monitorado."
         actions={
-          <Button onClick={() => navigate("/scans")}>
+          canWrite && <Button onClick={() => navigate("/scans?new=1")}>
             <Plus className="h-4 w-4" />
             Novo scan
           </Button>
         }
       />
+
+      {[assets, targets, scans, scanStats, risk].filter((query) => query.isError).map((query, index) => (
+        <ErrorBanner key={index} message={errorMessage(query.error)} onRetry={() => void query.refetch()} />
+      ))}
 
       {/* KPIs principais */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -80,17 +89,17 @@ export function DashboardPage() {
         />
         <StatCard
           label="Scans ativos"
-          value={active}
-          hint={`${scanList.length} no total`}
+          value={scanStats.data?.active ?? "—"}
+          hint={scans.data ? `${scans.data.count} no total` : undefined}
           accent="primary"
           icon={Radar}
           onClick={() => navigate("/scans")}
-          loading={scans.isLoading}
+          loading={scanStats.isLoading}
         />
         <StatCard
           label="Findings críticos"
           value={summary?.severity.critical ?? "—"}
-          hint={`${totalFindings} findings no total`}
+          hint={summary ? `${totalFindings} findings no total` : undefined}
           accent="danger"
           icon={ShieldAlert}
           onClick={() => navigate("/vulnerabilities")}
@@ -102,8 +111,12 @@ export function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="glass-elevated flex flex-col p-5">
           <SectionHeading title="Risk Score" icon={Flame} />
-          {risk.isLoading || !summary ? (
+          {risk.isError ? (
+            <p className="py-8 text-sm text-muted-foreground">Risco indisponível. Tente carregar os dados novamente.</p>
+          ) : risk.isLoading || !summary ? (
             <Skeleton className="mx-auto h-44 w-44 rounded-full" />
+          ) : !scans.data?.count ? (
+            <EmptyState icon={Radar} title="Ambiente ainda não avaliado" hint="Execute um scan para iniciar a análise. Ausência de dados não significa ausência de risco." />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 py-2">
               <RiskGauge score={Math.round(summary.risk_score)} level={summary.risk_level} />
@@ -119,7 +132,7 @@ export function DashboardPage() {
 
         <GlassPanel className="flex flex-col lg:col-span-2">
           <SectionHeading title="Distribuição por severidade" icon={PieChart} />
-          {risk.isLoading ? (
+          {risk.isError ? <p className="py-8 text-sm text-muted-foreground">Distribuição indisponível.</p> : risk.isLoading ? (
             <Skeleton className="h-52 w-full" />
           ) : (
             <div className="flex flex-1 items-center justify-center">
@@ -169,13 +182,13 @@ export function DashboardPage() {
             icon={ShieldAlert}
             action={
               topAssets.length > 0 && (
-                <Link to="/vulnerabilities" className="text-xs text-primary hover:underline">
+                <Link to="/assets" className="text-xs text-primary hover:underline">
                   Ver todos
                 </Link>
               )
             }
           />
-          {risk.isLoading ? (
+          {risk.isError ? <p className="py-8 text-sm text-muted-foreground">Priorização indisponível.</p> : risk.isLoading ? (
             <Skeleton className="h-40 w-full" />
           ) : topAssets.length === 0 ? (
             <EmptyState
@@ -212,7 +225,7 @@ export function DashboardPage() {
 
         <GlassPanel className="lg:col-span-3">
           <SectionHeading title="Heatmap por categoria" icon={Grid3x3} />
-          {risk.isLoading ? (
+          {risk.isError ? <p className="py-8 text-sm text-muted-foreground">Matriz indisponível.</p> : risk.isLoading ? (
             <Skeleton className="h-40 w-full" />
           ) : (risk.data?.heatmap ?? []).length === 0 ? (
             <EmptyState
@@ -239,7 +252,7 @@ export function DashboardPage() {
             </Link>
           }
         />
-        {scans.isLoading ? (
+        {scans.isError ? <p className="py-8 text-sm text-muted-foreground">Scans recentes indisponíveis.</p> : scans.isLoading ? (
           <Skeleton className="h-40 w-full" />
         ) : scanList.length === 0 ? (
           <EmptyState
@@ -247,7 +260,7 @@ export function DashboardPage() {
             title="Nenhum scan ainda"
             hint="Cadastre um alvo e inicie uma descoberta."
             action={
-              <Button variant="secondary" onClick={() => navigate("/scans")}>
+              canWrite && <Button variant="secondary" onClick={() => navigate("/scans?new=1")}>
                 <Crosshair className="h-4 w-4" />
                 Iniciar scan
               </Button>
@@ -275,7 +288,7 @@ export function DashboardPage() {
                         {s.target_name ?? s.target}
                       </Link>
                     </TableCell>
-                    <TableCell className="capitalize text-muted-foreground">{s.scan_type}</TableCell>
+                    <TableCell><ScanTypeBadge type={s.scan_type} /></TableCell>
                     <TableCell>
                       <StatusBadge status={s.status} />
                     </TableCell>

@@ -1,3 +1,4 @@
+import { useUrlState } from "@/hooks/useUrlState";
 /** Reports — gerar, pré-visualizar, baixar e excluir relatórios (RF009/RF010). */
 
 import { useMemo, useState } from "react";
@@ -40,9 +41,9 @@ export function ReportsPage() {
   usePageTitle("Relatórios");
   const { canWrite, isAdmin } = usePermissions();
 
-  const [type, setType] = useState("all");
-  const [format, setFormat] = useState("all");
-  const [page, setPage] = useState(1);
+  const [type, setType] = useUrlState<string>("type", "all");
+  const [format, setFormat] = useUrlState<string>("format", "all");
+  const [page, setPage] = useUrlState<number>("page", 1);
 
   const [formOpen, setFormOpen] = useState(false);
   const [preview, setPreview] = useState<Report | null>(null);
@@ -59,8 +60,9 @@ export function ReportsPage() {
     }),
     [type, format, page],
   );
-  const { data, isLoading, isError, error } = useReports(params);
+  const { data, isLoading, isError, error, refetch } = useReports(params);
   const reports = data?.results ?? [];
+  const filtered = type !== "all" || format !== "all";
 
   const onDownload = (r: Report) =>
     download.mutate(
@@ -90,7 +92,7 @@ export function ReportsPage() {
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <Select value={type} onValueChange={onPage(setType)}>
-          <SelectTrigger className="w-full sm:w-44">
+          <SelectTrigger aria-label="Filtrar por tipo" className="w-full sm:w-44">
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -100,7 +102,7 @@ export function ReportsPage() {
           </SelectContent>
         </Select>
         <Select value={format} onValueChange={onPage(setFormat)}>
-          <SelectTrigger className="w-full sm:w-44">
+          <SelectTrigger aria-label="Filtrar por formato" className="w-full sm:w-44">
             <SelectValue placeholder="Formato" />
           </SelectTrigger>
           <SelectContent>
@@ -113,16 +115,23 @@ export function ReportsPage() {
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <div className="space-y-3">
+          <ErrorBanner message={errorMessage(error)} />
+          <Button variant="outline" onClick={() => void refetch()}>Tentar novamente</Button>
+        </div>
       ) : isLoading ? (
-        <TableSkeleton columns={5} />
+        <TableSkeleton columns={6} />
       ) : reports.length === 0 ? (
         <EmptyState
           icon={FileBarChart}
-          title="Nenhum relatório"
-          hint="Gere um relatório a partir de um scan concluído."
+          title={filtered ? "Nenhum relatório com estes filtros" : "Nenhum relatório"}
+          hint={filtered ? "Ajuste os filtros para consultar outros documentos." : "Gere um relatório a partir de um scan concluído."}
           action={
-            canWrite && (
+            filtered ? (
+              <Button variant="outline" onClick={() => { setType("all"); setFormat("all"); setPage(1); }}>
+                Limpar filtros
+              </Button>
+            ) : canWrite && (
               <Button onClick={() => setFormOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Gerar relatório
@@ -232,7 +241,7 @@ export function ReportsPage() {
         variant="destructive"
         confirmLabel="Excluir"
         loading={del.isPending}
-        description="O relatório e seu arquivo serão removidos permanentemente."
+        description={`O relatório ${deleting?.report_type === "executive" ? "executivo" : "técnico"} (${deleting?.format.toUpperCase() ?? ""}) de ${deleting?.scan_target ?? deleting?.scan.slice(0, 8) ?? ""} e seu arquivo serão removidos permanentemente.`}
         onConfirm={() => {
           if (!deleting) return;
           del.mutate(deleting.id, {

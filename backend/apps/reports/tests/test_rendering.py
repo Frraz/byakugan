@@ -32,6 +32,7 @@ def test_render_csv_has_one_row_per_finding():
     assert len(rows) == 1
     assert rows[0]["cve"] == "CVE-2024-1111"
     assert rows[0]["severity"] == "high"
+    assert "mitre_technique" in rows[0]
 
 
 def test_render_csv_ignores_report_type():
@@ -63,5 +64,9 @@ def test_render_pdf_handles_scan_without_findings():
 
 def test_render_report_dispatches_by_format():
     scan = make_completed_scan_with_findings()
-    assert render_report(scan, Report.ReportType.TECHNICAL, Report.Format.JSON).startswith(b"{")
-    assert render_report(scan, Report.ReportType.TECHNICAL, Report.Format.PDF).startswith(b"%PDF")
+    assert render_report(
+        scan, Report.ReportType.TECHNICAL, Report.Format.JSON
+    ).startswith(b"{")
+    assert render_report(
+        scan, Report.ReportType.TECHNICAL, Report.Format.PDF
+    ).startswith(b"%PDF")

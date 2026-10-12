@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -33,6 +34,7 @@ export function ReportPreviewDialog({
   const [jsonText, setJsonText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!report) return;
@@ -52,6 +54,7 @@ export function ReportPreviewDialog({
           setPdfUrl(objectUrl);
         } else if (report.format === "json") {
           const text = await blob.text();
+          if (cancelled) return;
           try {
             setJsonText(JSON.stringify(JSON.parse(text), null, 2));
           } catch {
@@ -66,30 +69,41 @@ export function ReportPreviewDialog({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [report]);
+  }, [report, attempt]);
 
   return (
     <Dialog open={Boolean(report)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[85vh] max-w-4xl flex-col">
-        <DialogHeader className="flex-row items-center justify-between gap-4 space-y-0">
-          <DialogTitle>
-            Relatório {report?.report_type === "executive" ? "executivo" : "técnico"} ·{" "}
-            <span className="font-mono uppercase">{report?.format}</span>
-          </DialogTitle>
+      <DialogContent className="flex h-[85dvh] max-w-4xl flex-col">
+        <DialogHeader className="gap-3 pr-8 text-left sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+          <div className="min-w-0 space-y-2">
+            <DialogTitle className="leading-snug">
+              Relatório {report?.report_type === "executive" ? "executivo" : "técnico"} ·{" "}
+              <span className="font-mono uppercase">{report?.format}</span>
+            </DialogTitle>
+            <DialogDescription className="break-words">
+              {report?.scan_target ?? "Scan de origem"}. Baixe o arquivo para consultar em outro aplicativo.
+            </DialogDescription>
+          </div>
           {report && (
-            <Button size="sm" variant="outline" onClick={() => onDownload(report)}>
+            <Button className="shrink-0 self-start" size="sm" variant="outline" onClick={() => onDownload(report)}>
               <Download className="h-4 w-4" />
               Baixar
             </Button>
           )}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border" aria-busy={loading}>
           {loading ? (
-            <Skeleton className="h-full w-full" />
+            <div role="status" className="h-full">
+              <span className="sr-only">Carregando pré-visualização…</span>
+              <Skeleton className="h-full w-full" />
+            </div>
           ) : error ? (
-            <div className="p-4">
+            <div className="space-y-3 p-4">
               <ErrorBanner message={error} />
+              <Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>
+                Tentar novamente
+              </Button>
             </div>
           ) : report?.format === "pdf" && pdfUrl ? (
             <iframe title="Pré-visualização do relatório" src={pdfUrl} className="h-full w-full" />

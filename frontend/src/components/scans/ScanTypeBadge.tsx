@@ -7,10 +7,10 @@ import type { ScanType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const META: Record<ScanType, { label: string; icon: ComponentType<{ className?: string }>; className: string }> = {
-  discovery: { label: "Discovery", icon: Radar, className: "bg-sev-info/10 text-sev-info border-sev-info/30" },
-  fingerprint: { label: "Fingerprint", icon: Fingerprint, className: "bg-accent/10 text-accent border-accent/30" },
-  vulnerability: { label: "Vulnerability", icon: ShieldAlert, className: "bg-warning/10 text-warning border-warning/30" },
-  full: { label: "Full", icon: Layers, className: "bg-primary/10 text-primary border-primary/30" },
+  discovery: { label: "Descoberta", icon: Radar, className: "bg-sev-info/10 text-sev-info border-sev-info/30" },
+  fingerprint: { label: "Fingerprinting", icon: Fingerprint, className: "bg-secondary text-foreground border-border" },
+  vulnerability: { label: "Vulnerabilidades", icon: ShieldAlert, className: "bg-warning/10 text-warning border-warning/30" },
+  full: { label: "Completo", icon: Layers, className: "bg-primary/10 text-primary border-primary/30" },
 };
 
 export function ScanTypeBadge({ type, className }: { type: ScanType; className?: string }) {
@@ -31,8 +31,8 @@ export function ScanTypeBadge({ type, className }: { type: ScanType; className?:
 }
 
 export const SCAN_TYPE_LABELS: Record<ScanType, string> = {
-  discovery: "Discovery",
-  fingerprint: "Fingerprint",
-  vulnerability: "Vulnerability",
-  full: "Full",
+  discovery: "Descoberta",
+  fingerprint: "Fingerprinting",
+  vulnerability: "Vulnerabilidades",
+  full: "Completo",
 };

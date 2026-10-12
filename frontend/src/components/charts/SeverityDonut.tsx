@@ -10,7 +10,7 @@ const COLOR_TOKEN: Record<Severity, keyof ReturnType<typeof useChartColors>> = {
   critical: "destructive",
   high: "sev-high",
   medium: "warning",
-  low: "primary",
+  low: "sev-low",
   info: "sev-info",
 };
 
@@ -34,10 +34,10 @@ export function SeverityDonut({ counts }: { counts: SeverityCounts }) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-4 sm:flex-row">
-      <div className="relative h-52 w-52 shrink-0">
+    <div className="flex flex-wrap items-center justify-center gap-4">
+      <div aria-hidden="true" className="relative h-52 w-52 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart accessibilityLayer={false}>
             <Pie
               data={data}
               dataKey="value"
@@ -47,6 +47,8 @@ export function SeverityDonut({ counts }: { counts: SeverityCounts }) {
               paddingAngle={2}
               stroke={colors.card}
               strokeWidth={2}
+              isAnimationActive={false}
+              rootTabIndex={-1}
             >
               {data.map((d) => (
                 <Cell key={d.key} fill={d.fill} />

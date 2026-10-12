@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import io
 import math
+from html import escape
+from pathlib import Path
 from typing import Any
 
-from reportlab.graphics.charts.barcharts import VerticalBarChart
+import reportlab
 from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.graphics.shapes import Drawing, String
@@ -29,6 +31,8 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     BaseDocTemplate,
     Flowable,
@@ -54,8 +58,15 @@ def _arc_start(cx: float, cy: float, r: float, start_deg: float) -> tuple[float,
 
 
 def _stroke_arc(
-    c, cx: float, cy: float, r: float, start_deg: float, extent_deg: float,
-    color: colors.Color, width: float, alpha: float = 1.0,
+    c,
+    cx: float,
+    cy: float,
+    r: float,
+    start_deg: float,
+    extent_deg: float,
+    color: colors.Color,
+    width: float,
+    alpha: float = 1.0,
 ) -> None:
     """Desenha um arco aberto (só o traço) via ``arcTo`` — ``canvas.arc`` sozinho
     não existe no pdfgen; path precisa iniciar com ``moveTo`` no ponto de
@@ -84,7 +95,9 @@ def _draw_mark(c, cx: float, cy: float, size: float, color: colors.Color) -> Non
     r1 = size * 0.44
     _stroke_arc(c, cx, cy - size * 0.06, r1, 24, 132, color, width)
     r2 = size * 0.28
-    _stroke_arc(c, cx + size * 0.02, cy - size * 0.30, r2, 28, 124, color, width, alpha=0.55)
+    _stroke_arc(
+        c, cx + size * 0.02, cy - size * 0.30, r2, 28, 124, color, width, alpha=0.55
+    )
     c.saveState()
     c.setFillColor(color)
     c.circle(cx - size * 0.09, cy - size * 0.02, size * 0.075, stroke=0, fill=1)
@@ -120,7 +133,7 @@ LINE = colors.HexColor("#E2E0DB")
 
 SEVERITY_COLORS: dict[str, colors.Color] = {
     "critical": colors.HexColor("#C9404B"),
-    "high": colors.HexColor("#BD6B2E"),
+    "high": colors.HexColor("#95501F"),
     "medium": colors.HexColor("#8A6D16"),
     "low": colors.HexColor("#2E6E8C"),
     "info": colors.HexColor("#5B6472"),
@@ -146,26 +159,79 @@ IMPACT_LABELS_PT = {
     "none": "Sem impacto",
 }
 
+# Fontes distribuídas pelo ReportLab: embutidas no PDF, sem depender do host.
+_FONT_DIR = Path(reportlab.__file__).parent / "fonts"
+for _name, _file in (
+    ("ByakuganSans", "Vera.ttf"),
+    ("ByakuganSans-Bold", "VeraBd.ttf"),
+    ("ByakuganSans-Italic", "VeraIt.ttf"),
+    ("ByakuganSans-BoldItalic", "VeraBI.ttf"),
+):
+    pdfmetrics.registerFont(TTFont(_name, str(_FONT_DIR / _file)))
+pdfmetrics.registerFontFamily(
+    "ByakuganSans",
+    normal="ByakuganSans",
+    bold="ByakuganSans-Bold",
+    italic="ByakuganSans-Italic",
+    boldItalic="ByakuganSans-BoldItalic",
+)
+
+
+def _text(value: Any) -> str:
+    """Escapa dados externos para o parser de markup; preserva linhas de evidência."""
+    return escape(str(value or "—")).replace("\n", "<br/>")
+
+
 _BASE = getSampleStyleSheet()
+for _style in _BASE.byName.values():
+    _style.fontName = (
+        "ByakuganSans-Bold" if "Heading" in _style.name else "ByakuganSans"
+    )
+    _style.splitLongWords = True
 STYLES = {
-    "h1": ParagraphStyle("h1", parent=_BASE["Heading1"], textColor=INK_DARK, fontSize=16, spaceAfter=8),
-    "h2": ParagraphStyle(
-        "h2", parent=_BASE["Heading2"], textColor=INK_DARK, fontSize=12, spaceBefore=14, spaceAfter=6
+    "h1": ParagraphStyle(
+        "h1", parent=_BASE["Heading1"], textColor=INK_DARK, fontSize=16, spaceAfter=8
     ),
-    "h3": ParagraphStyle("h3", parent=_BASE["Heading3"], textColor=INK, fontSize=10, spaceAfter=4),
-    "body": ParagraphStyle("body", parent=_BASE["BodyText"], textColor=INK, fontSize=9, leading=13),
+    "h2": ParagraphStyle(
+        "h2",
+        parent=_BASE["Heading2"],
+        textColor=INK_DARK,
+        fontSize=12,
+        spaceBefore=14,
+        spaceAfter=6,
+    ),
+    "h3": ParagraphStyle(
+        "h3", parent=_BASE["Heading3"], textColor=INK, fontSize=10, spaceAfter=4
+    ),
+    "body": ParagraphStyle(
+        "body", parent=_BASE["BodyText"], textColor=INK, fontSize=9, leading=13
+    ),
     "small": ParagraphStyle(
         "small", parent=_BASE["BodyText"], textColor=INK, fontSize=8, leading=10
     ),
-    "muted": ParagraphStyle("muted", parent=_BASE["Normal"], textColor=MUTED, fontSize=8),
+    "muted": ParagraphStyle(
+        "muted", parent=_BASE["Normal"], textColor=MUTED, fontSize=8
+    ),
     "cover_title": ParagraphStyle(
-        "cover_title", parent=_BASE["Title"], textColor=colors.white, fontSize=30, leading=34
+        "cover_title",
+        parent=_BASE["Title"],
+        textColor=colors.white,
+        fontSize=30,
+        leading=34,
     ),
     "cover_sub": ParagraphStyle(
-        "cover_sub", parent=_BASE["Normal"], textColor=BRASS_LIGHT, fontSize=12, alignment=TA_CENTER
+        "cover_sub",
+        parent=_BASE["Normal"],
+        textColor=BRASS_LIGHT,
+        fontSize=12,
+        alignment=TA_CENTER,
     ),
     "cover_meta": ParagraphStyle(
-        "cover_meta", parent=_BASE["Normal"], textColor=colors.white, fontSize=11, leading=18
+        "cover_meta",
+        parent=_BASE["Normal"],
+        textColor=colors.white,
+        fontSize=11,
+        leading=18,
     ),
 }
 
@@ -199,7 +265,7 @@ class NumberedCanvas:
                 super().save()
 
             def _draw_footer(self, total: int):
-                self.setFont("Helvetica", 7)
+                self.setFont("ByakuganSans", 7)
                 self.setFillColor(MUTED)
                 self.drawString(
                     2 * cm,
@@ -236,7 +302,7 @@ def _severity_donut(severity: dict[str, int]) -> Drawing | None:
 
     legend = Legend()
     legend.x, legend.y = 155, 120
-    legend.fontName = "Helvetica"
+    legend.fontName = "ByakuganSans"
     legend.fontSize = 8
     legend.dxTextSpace = 5
     legend.deltay = 12
@@ -248,30 +314,50 @@ def _severity_donut(severity: dict[str, int]) -> Drawing | None:
 
 
 def _category_bars(heatmap: list[dict[str, Any]]) -> Drawing | None:
-    """Barras de findings por categoria (soma das severidades)."""
+    """Barras horizontais legíveis, com valores e rótulos de categoria."""
+    from reportlab.graphics.shapes import Rect
+
     totals: dict[str, int] = {}
     for cell in heatmap:
-        totals[cell["category"]] = totals.get(cell["category"], 0) + cell["count"]
-    totals = {k: v for k, v in totals.items() if v > 0}
-    if not totals:
+        label = cell.get("category_label") or cell["category"]
+        totals[label] = totals.get(label, 0) + cell["count"]
+    items = sorted(
+        ((key, value) for key, value in totals.items() if value > 0),
+        key=lambda item: item[1],
+        reverse=True,
+    )[:8]
+    if not items:
         return None
-
-    items = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:8]
-    drawing = Drawing(440, 170)
-    chart = VerticalBarChart()
-    chart.x, chart.y = 30, 30
-    chart.width, chart.height = 380, 120
-    chart.data = [[v for _, v in items]]
-    chart.categoryAxis.categoryNames = [k for k, _ in items]
-    chart.categoryAxis.labels.fontSize = 7
-    chart.categoryAxis.labels.angle = 20
-    chart.categoryAxis.labels.dy = -4
-    chart.valueAxis.valueMin = 0
-    chart.valueAxis.labels.fontSize = 7
-    chart.bars[0].fillColor = BRASS
-    chart.barWidth = 10
-    drawing.add(chart)
-    drawing.add(String(30, 158, "Findings por categoria", fontSize=9, fillColor=INK))
+    height = 30 + 26 * len(items)
+    drawing = Drawing(440, height)
+    maximum = max(value for _, value in items)
+    drawing.add(
+        String(
+            0,
+            height - 12,
+            "Findings por categoria",
+            fontName="ByakuganSans-Bold",
+            fontSize=9,
+            fillColor=INK,
+        )
+    )
+    for index, (label, value) in enumerate(items):
+        y = height - 38 - index * 26
+        drawing.add(
+            String(0, y + 10, label, fontName="ByakuganSans", fontSize=8, fillColor=INK)
+        )
+        width = 400 * value / maximum
+        drawing.add(Rect(0, y - 2, width, 5, fillColor=BRASS, strokeColor=None))
+        drawing.add(
+            String(
+                410,
+                y - 2,
+                str(value),
+                fontName="ByakuganSans",
+                fontSize=8,
+                fillColor=INK,
+            )
+        )
     return drawing
 
 
@@ -283,11 +369,33 @@ def _styled_table(
     severities: list[str] | None = None,
 ) -> Table:
     """Tabela com cabeçalho escuro, zebra e (opcional) coluna de severidade colorida."""
-    table = Table(rows, colWidths=col_widths, repeatRows=1)
+    wrapped = []
+    for index, row in enumerate(rows):
+        cells = []
+        for column, cell in enumerate(row):
+            if isinstance(cell, str):
+                color = colors.white if index == 0 else INK
+                if (
+                    index
+                    and severity_col == column
+                    and severities
+                    and index <= len(severities)
+                ):
+                    color = SEVERITY_COLORS.get(severities[index - 1], INK)
+                style = ParagraphStyle(
+                    "table-cell",
+                    parent=STYLES["small"],
+                    textColor=color,
+                    fontName="ByakuganSans-Bold" if index == 0 else "ByakuganSans",
+                )
+                cell = Paragraph(_text(cell), style)
+            cells.append(cell)
+        wrapped.append(cells)
+    table = Table(wrapped, colWidths=col_widths, repeatRows=1, splitInRow=1)
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), INK_DARK),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), "ByakuganSans-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
@@ -302,7 +410,14 @@ def _styled_table(
             color = SEVERITY_COLORS.get(sev)
             if color:
                 style.append(("TEXTCOLOR", (severity_col, i), (severity_col, i), color))
-                style.append(("FONTNAME", (severity_col, i), (severity_col, i), "Helvetica-Bold"))
+                style.append(
+                    (
+                        "FONTNAME",
+                        (severity_col, i),
+                        (severity_col, i),
+                        "ByakuganSans-Bold",
+                    )
+                )
     table.setStyle(TableStyle(style))
     return table
 
@@ -321,7 +436,9 @@ def _summary_cards(summary: dict[str, Any]) -> Table:
     value_style = ParagraphStyle("kpi", parent=STYLES["body"], fontSize=18, leading=22)
     row = [
         [
-            Paragraph(f'<font color="{color.hexval()}"><b>{value}</b></font>', value_style),
+            Paragraph(
+                f'<font color="{color.hexval()}"><b>{value}</b></font>', value_style
+            ),
             Spacer(1, 2),
             Paragraph(label.upper(), STYLES["muted"]),
         ]
@@ -353,9 +470,9 @@ _OWASP_STATUS_PT = {
 _OWASP_STATUS_COLOR = {
     "proven": SEVERITY_COLORS["critical"],
     "found": SEVERITY_COLORS["high"],
-    "tested": colors.HexColor("#2C8A63"),
+    "tested": colors.HexColor("#226B4D"),
     "limited": MUTED,
-    "not-tested": colors.HexColor("#9CA3AB"),
+    "not-tested": MUTED,
 }
 
 
@@ -372,7 +489,7 @@ def _owasp_edition_table(edition_rows: list[dict[str, Any]]) -> Table:
         rows.append(
             [
                 code,
-                Paragraph(name or label, STYLES["small"]),
+                Paragraph(_text(name or label), STYLES["small"]),
                 _OWASP_STATUS_PT.get(entry["status"], entry["status"]),
                 str(entry["findings"]),
                 SEVERITY_LABELS_PT.get(sev, "—") if sev else "—",
@@ -386,7 +503,7 @@ def _owasp_edition_table(edition_rows: list[dict[str, Any]]) -> Table:
         color = _OWASP_STATUS_COLOR.get(st)
         if color:
             style.append(("TEXTCOLOR", (2, i), (2, i), color))
-            style.append(("FONTNAME", (2, i), (2, i), "Helvetica-Bold"))
+            style.append(("FONTNAME", (2, i), (2, i), "ByakuganSans-Bold"))
     table.setStyle(TableStyle(style))
     return table
 
@@ -413,7 +530,7 @@ def _attack_narrative_section(payload: dict[str, Any]) -> list:
     for entry in narrative:
         story.append(
             Paragraph(
-                f'{entry["asset"]} — impacto máximo: '
+                f'{_text(entry["asset"])} — impacto máximo: '
                 f'<b>{IMPACT_LABELS_PT.get(entry["max_impact"], entry["max_impact"])}</b>',
                 STYLES["h3"],
             )
@@ -421,7 +538,8 @@ def _attack_narrative_section(payload: dict[str, Any]) -> list:
         if entry["mitre_techniques"]:
             story.append(
                 Paragraph(
-                    "Técnicas MITRE ATT&amp;CK: " + ", ".join(entry["mitre_techniques"]),
+                    "Técnicas MITRE ATT&amp;CK: "
+                    + ", ".join(entry["mitre_techniques"]),
                     STYLES["small"],
                 )
             )
@@ -433,17 +551,17 @@ def _attack_narrative_section(payload: dict[str, Any]) -> list:
             )
             story.append(
                 Paragraph(
-                    f'{i}. <b>{step["title"]}</b> — '
+                    f'{i}. <b>{_text(step["title"])}</b> — '
                     f'{IMPACT_LABELS_PT.get(step["impact_level"], step["impact_level"])}{technique}',
                     STYLES["small"],
                 )
             )
             if step["proof"]:
-                story.append(Paragraph(step["proof"], STYLES["muted"]))
+                story.append(Paragraph(_text(step["proof"]), STYLES["muted"]))
         for chain in entry["chains"]:
             story.append(
                 Paragraph(
-                    f'⚠ Cadeia de risco: <b>{chain["title"]}</b> — {chain["description"]}',
+                    f'Cadeia de risco: <b>{_text(chain["title"])}</b> — {_text(chain["description"])}',
                     STYLES["small"],
                 )
             )
@@ -480,7 +598,7 @@ def _owasp_coverage_section(payload: dict[str, Any]) -> list:
 
 def _executive_story(payload: dict[str, Any]) -> list:
     story: list = [Paragraph("Sumário executivo", STYLES["h2"])]
-    story.append(Paragraph(payload.get("narrative", ""), STYLES["body"]))
+    story.append(Paragraph(_text(payload.get("narrative", "")), STYLES["body"]))
     story.append(Spacer(1, 0.4 * cm))
     story.append(_summary_cards(payload["summary"]))
     story.append(Spacer(1, 0.5 * cm))
@@ -499,7 +617,12 @@ def _executive_story(payload: dict[str, Any]) -> list:
     for asset in payload["top_risks"]:
         label = asset["hostname"] or asset["ip"] or asset["domain"] or asset["asset"]
         rows.append(
-            [label, f"{asset['risk_score']}/100", asset["risk_level"], str(asset["findings"])]
+            [
+                label,
+                f"{asset['risk_score']}/100",
+                SEVERITY_LABELS_PT.get(asset["risk_level"], asset["risk_level"]),
+                str(asset["findings"]),
+            ]
         )
     if len(rows) == 1:
         rows.append(["—", "—", "—", "—"])
@@ -511,7 +634,10 @@ def _executive_story(payload: dict[str, Any]) -> list:
 
 
 def _technical_story(payload: dict[str, Any]) -> list:
-    story: list = [Paragraph("Resumo", STYLES["h2"]), _summary_cards(payload["summary"])]
+    story: list = [
+        Paragraph("Resumo", STYLES["h2"]),
+        _summary_cards(payload["summary"]),
+    ]
     story.append(Spacer(1, 0.5 * cm))
 
     meta = payload["scan"]
@@ -524,7 +650,19 @@ def _technical_story(payload: dict[str, Any]) -> list:
         ["Iniciado em", meta["started_at"] or "—"],
         ["Finalizado em", meta["finished_at"] or "—"],
     ]
-    meta_table = Table(meta_rows, colWidths=[4 * cm, 12 * cm])
+    meta_rows = [
+        [
+            Paragraph(
+                _text(label),
+                ParagraphStyle(
+                    "meta-label", parent=STYLES["small"], textColor=colors.white
+                ),
+            ),
+            Paragraph(_text(value), STYLES["small"]),
+        ]
+        for label, value in meta_rows
+    ]
+    meta_table = Table(meta_rows, colWidths=[4 * cm, 12 * cm], splitInRow=1)
     meta_table.setStyle(
         TableStyle(
             [
@@ -546,9 +684,9 @@ def _technical_story(payload: dict[str, Any]) -> list:
     for asset in payload["assets"]:
         asset_rows.append(
             [
-                Paragraph(asset["asset"], STYLES["small"]),
-                Paragraph(asset["os"] or "—", STYLES["small"]),
-                Paragraph(", ".join(asset["services"]) or "—", STYLES["small"]),
+                Paragraph(_text(asset["asset"]), STYLES["small"]),
+                Paragraph(_text(asset["os"] or "—"), STYLES["small"]),
+                Paragraph(_text(", ".join(asset["services"]) or "—"), STYLES["small"]),
             ]
         )
     if len(asset_rows) == 1:
@@ -557,28 +695,39 @@ def _technical_story(payload: dict[str, Any]) -> list:
 
     story.append(Paragraph("Findings", STYLES["h2"]))
     findings = payload["findings"]
-    finding_rows = [["Ativo", "Título", "Sev.", "CVSS", "Evidência", "Recomendação"]]
-    for f in findings:
-        finding_rows.append(
-            [
-                Paragraph(f["asset"], STYLES["small"]),
-                Paragraph(f["title"], STYLES["small"]),
-                Paragraph(SEVERITY_LABELS_PT.get(f["severity"], f["severity"]), STYLES["small"]),
-                str(f["cvss"]) if f["cvss"] is not None else "—",
-                Paragraph(f["evidence"] or "—", STYLES["small"]),
-                Paragraph(f["recommendation"] or "—", STYLES["small"]),
-            ]
+    if not findings:
+        story.append(
+            Paragraph(
+                "Nenhum finding registrado neste scan. Isso não comprova ausência de vulnerabilidades.",
+                STYLES["body"],
+            )
         )
-    if len(finding_rows) == 1:
-        finding_rows.append(["—", "—", "—", "—", "—", "—"])
-    story.append(
-        _styled_table(
-            finding_rows,
-            [2.6 * cm, 3.2 * cm, 1.6 * cm, 1.3 * cm, 3.6 * cm, 3.7 * cm],
-            severity_col=2,
-            severities=[f["severity"] for f in findings],
+    for index, finding in enumerate(findings, start=1):
+        story.append(Paragraph(f"{index}. {_text(finding['title'])}", STYLES["h3"]))
+        story.append(Paragraph(f"Ativo: {_text(finding['asset'])}", STYLES["small"]))
+        severity = SEVERITY_LABELS_PT.get(finding["severity"], finding["severity"])
+        cvss = finding.get("cvss")
+        story.append(
+            Paragraph(
+                f"Severidade: {_text(severity)} · CVSS: {cvss if cvss is not None else '—'}",
+                STYLES["small"],
+            )
         )
-    )
+        taxonomy = " · ".join(
+            str(finding.get(key))
+            for key in ("cve", "cwe", "owasp_2021", "owasp_2025", "mitre_technique")
+            if finding.get(key)
+        )
+        if taxonomy:
+            story.append(Paragraph(_text(taxonomy), STYLES["small"]))
+        for label, key in (
+            ("Descrição", "description"),
+            ("Evidência de detecção", "evidence"),
+            ("Recomendação", "recommendation"),
+        ):
+            story.append(Paragraph(f"<b>{label}</b>", STYLES["body"]))
+            story.append(Paragraph(_text(finding.get(key)), STYLES["body"]))
+        story.append(Spacer(1, 0.4 * cm))
 
     story.append(Spacer(1, 0.5 * cm))
     story += _attack_narrative_section(payload)
@@ -590,11 +739,18 @@ def _technical_story(payload: dict[str, Any]) -> list:
     if references:
         story += [Spacer(1, 0.5 * cm), Paragraph("Referências", STYLES["h2"])]
         for ref in references:
-            title = f'<b>{ref["cve"]}</b> — {ref["title"]}' if ref["cve"] else ref["title"]
+            title = (
+                f'<b>{_text(ref["cve"])}</b> — {_text(ref["title"])}'
+                if ref["cve"]
+                else _text(ref["title"])
+            )
             story.append(Paragraph(title, STYLES["body"]))
             for link in ref["links"]:
                 story.append(
-                    Paragraph(f'<font color="{BRASS.hexval()}">{link}</font>', STYLES["small"])
+                    Paragraph(
+                        f'<font color="{BRASS.hexval()}">{_text(link)}</font>',
+                        STYLES["small"],
+                    )
                 )
             story.append(Spacer(1, 0.2 * cm))
 
@@ -605,10 +761,11 @@ def _technical_story(payload: dict[str, Any]) -> list:
             Paragraph("Conhecimento relacionado (remediação)", STYLES["h2"]),
         ]
         for article in articles:
-            story.append(Paragraph(article["title"], STYLES["h3"]))
-            story.append(Paragraph(article["summary"], STYLES["small"]))
+            story.append(Paragraph(_text(article["title"]), STYLES["h3"]))
+            story.append(Paragraph(_text(article["summary"]), STYLES["small"]))
             steps = "<br/>".join(
-                f"{i}. {step}" for i, step in enumerate(article["remediation_steps"], start=1)
+                f"{i}. {_text(step)}"
+                for i, step in enumerate(article["remediation_steps"], start=1)
             )
             story += [Paragraph(steps, STYLES["small"]), Spacer(1, 0.3 * cm)]
 
@@ -628,11 +785,14 @@ def _cover(payload: dict[str, Any], title: str) -> list:
         Paragraph("BYAKUGAN", STYLES["cover_title"]),
         Paragraph("SECURITY ASSESSMENT", STYLES["cover_sub"]),
         Spacer(1, 1.5 * cm),
-        Paragraph(f'<font color="white" size=16><b>{title}</b></font>', STYLES["cover_meta"]),
-        Spacer(1, 0.6 * cm),
-        Paragraph(f'Alvo: <b>{payload["target"]}</b>', STYLES["cover_meta"]),
         Paragraph(
-            f'Gerado em: {payload["generated_at"][:19].replace("T", " ")}', STYLES["cover_meta"]
+            f'<font color="white" size=16><b>{title}</b></font>', STYLES["cover_meta"]
+        ),
+        Spacer(1, 0.6 * cm),
+        Paragraph(f'Alvo: <b>{_text(payload["target"])}</b>', STYLES["cover_meta"]),
+        Paragraph(
+            f'Gerado em: {payload["generated_at"][:19].replace("T", " ")} UTC',
+            STYLES["cover_meta"],
         ),
     ]
     banner = Table([[inner]], colWidths=[17 * cm], rowHeights=[23 * cm])
@@ -653,27 +813,54 @@ def _draw_header(canvas, doc):  # noqa: ANN001 — callback do reportlab
     """Cabeçalho das páginas de conteúdo: marca pequena + faixa."""
     canvas.saveState()
     _draw_mark(canvas, 2 * cm + 0.6 * cm, A4[1] - 2 * cm + 0.6 * cm, 1.2 * cm, BRASS)
-    canvas.setFont("Helvetica-Bold", 10)
+    canvas.setFont("ByakuganSans-Bold", 10)
     canvas.setFillColor(INK_DARK)
     canvas.drawString(3.4 * cm, A4[1] - 1.6 * cm, "BYAKUGAN")
-    canvas.setFont("Helvetica", 7)
+    canvas.setFont("ByakuganSans", 7)
     canvas.setFillColor(MUTED)
-    canvas.drawRightString(A4[0] - 2 * cm, A4[1] - 1.6 * cm, doc._report_target)
+    target = doc._report_target
+    # O valor completo aparece na capa; o cabeçalho não invade a marca.
+    while pdfmetrics.stringWidth(target, "ByakuganSans", 7) > 9 * cm:
+        target = target[:-2]
+    if target != doc._report_target:
+        target += "…"
+    canvas.drawRightString(A4[0] - 2 * cm, A4[1] - 1.6 * cm, target)
     canvas.setStrokeColor(BRASS)
     canvas.setLineWidth(1)
     canvas.line(2 * cm, A4[1] - 1.9 * cm, A4[0] - 2 * cm, A4[1] - 1.9 * cm)
     canvas.restoreState()
 
 
+class _ReportDocTemplate(BaseDocTemplate):
+    """Adiciona navegação por seções ao painel de marcadores do leitor PDF."""
+
+    def afterFlowable(self, flowable: Flowable) -> None:
+        """Registra títulos reais sem estimar números de página."""
+        if not isinstance(flowable, Paragraph) or flowable.style.name not in {
+            "h2",
+            "h3",
+        }:
+            return
+        index = getattr(self, "_heading_index", 0)
+        self._heading_index = index + 1
+        key = f"section-{index}"
+        self.canv.bookmarkPage(key)
+        self.canv.addOutlineEntry(
+            flowable.getPlainText(), key, level=0 if flowable.style.name == "h2" else 1
+        )
+
+
 def render_pdf(scan: Scan, report_type: str) -> bytes:
     """Documento PDF completo (executivo ou técnico) com capa e gráficos."""
     payload = build_report_payload(scan, report_type)
     title = (
-        "Relatório Executivo" if report_type == Report.ReportType.EXECUTIVE else "Relatório Técnico"
+        "Relatório Executivo"
+        if report_type == Report.ReportType.EXECUTIVE
+        else "Relatório Técnico"
     )
 
     buffer = io.BytesIO()
-    doc = BaseDocTemplate(
+    doc = _ReportDocTemplate(
         buffer,
         pagesize=A4,
         leftMargin=2 * cm,
@@ -685,9 +872,19 @@ def render_pdf(scan: Scan, report_type: str) -> bytes:
     doc._report_target = payload["target"]
 
     cover_frame = Frame(
-        0, 0, A4[0], A4[1], id="cover", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0
+        0,
+        0,
+        A4[0],
+        A4[1],
+        id="cover",
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
     )
-    content_frame = Frame(2 * cm, 1.5 * cm, A4[0] - 4 * cm, A4[1] - 3.9 * cm, id="content")
+    content_frame = Frame(
+        2 * cm, 1.5 * cm, A4[0] - 4 * cm, A4[1] - 3.9 * cm, id="content"
+    )
     doc.addPageTemplates(
         [
             PageTemplate(id="cover", frames=[cover_frame]),

@@ -1,3 +1,4 @@
+import { useUrlState } from "@/hooks/useUrlState";
 /** Base de conhecimento — leitura técnica editorial de remediação (RF0xx/RN013). */
 
 import { useMemo, useState } from "react";
@@ -173,9 +174,9 @@ export function KnowledgeBasePage() {
   usePageTitle("Base de conhecimento");
   const { canWrite } = usePermissions();
 
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("all");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useUrlState<string>("search", "");
+  const [category, setCategory] = useUrlState<string>("category", "all");
+  const [page, setPage] = useUrlState<number>("page", 1);
   const debounced = useDebounce(search);
 
   const [selected, setSelected] = useState<KnowledgeArticle | null>(null);
@@ -191,7 +192,7 @@ export function KnowledgeBasePage() {
     }),
     [debounced, category, page],
   );
-  const { data, isLoading, isError, error } = useKnowledgeArticles(params);
+  const { data, isLoading, isError, error, refetch } = useKnowledgeArticles(params);
   const results = data?.results ?? [];
 
   const openCreate = () => {
@@ -228,6 +229,7 @@ export function KnowledgeBasePage() {
               setSearch(e.target.value);
               setPage(1);
             }}
+            aria-label="Buscar por título ou resumo"
             placeholder="Buscar por título ou resumo…"
             className="pl-9"
           />
@@ -239,7 +241,7 @@ export function KnowledgeBasePage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger aria-label="Filtrar por categoria" className="w-full sm:w-56">
             <SelectValue placeholder="Categoria" />
           </SelectTrigger>
           <SelectContent>
@@ -254,7 +256,7 @@ export function KnowledgeBasePage() {
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
       ) : isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (

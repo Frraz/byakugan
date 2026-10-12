@@ -1,7 +1,8 @@
+import { useUrlState } from "@/hooks/useUrlState";
 /** Scans — visão geral (KPIs), filtros claros, tabela rica e ações por scan. */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity,
   Crosshair,
@@ -64,15 +65,22 @@ export function ScansPage() {
   usePageTitle("Scans");
   const { canWrite, isAdmin } = usePermissions();
 
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<ScanStatus | "all">("all");
-  const [scanType, setScanType] = useState("all");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useUrlState<string>("search", "");
+  const [status, setStatus] = useUrlState<ScanStatus | "all">("status", "all");
+  const [scanType, setScanType] = useUrlState<string>("scanType", "all");
+  const [page, setPage] = useUrlState<number>("page", 1);
   const debouncedSearch = useDebounce(search);
 
-  const [formOpen, setFormOpen] = useState(false);
+  const [routeParams, setRouteParams] = useSearchParams();
+  const formOpen = canWrite && routeParams.get("new") === "1";
+  const setFormOpen = (open: boolean) => setRouteParams((params) => {
+    const next = new URLSearchParams(params);
+    if (open) next.set("new", "1"); else next.delete("new");
+    return next;
+  }, { replace: true });
   const [deleting, setDeleting] = useState<Scan | null>(null);
   const [cancelling, setCancelling] = useState<Scan | null>(null);
+  const [exploiting, setExploiting] = useState<Scan | null>(null);
 
   const cancel = useCancelScan();
   const exploit = useTriggerExploit();
@@ -88,7 +96,7 @@ export function ScansPage() {
     [debouncedSearch, status, scanType, page],
   );
 
-  const { data, isLoading, isError, error } = useScans(params);
+  const { data, isLoading, isError, error, refetch } = useScans(params);
   const scans = data?.results ?? [];
   const filtersActive = Boolean(search) || status !== "all" || scanType !== "all";
 
@@ -112,10 +120,12 @@ export function ScansPage() {
       return;
     }
     exploit.mutate(s.id, {
-      onSuccess: () =>
+      onSuccess: () => {
+        setExploiting(null);
         toast.success(
           `Exploração enfileirada (${s.exploitable_findings_count} explorável(is)) — acompanhe em Evidências.`,
-        ),
+        );
+      },
       onError: (err) => toast.error(errorMessage(err)),
     });
   };
@@ -185,6 +195,7 @@ export function ScansPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
+            aria-label="Buscar por alvo"
             placeholder="Buscar por alvo…"
             className="pl-9"
           />
@@ -196,7 +207,7 @@ export function ScansPage() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-full sm:w-44">
+          <SelectTrigger aria-label="Filtrar por tipo de scan" className="w-full sm:w-44">
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -230,7 +241,7 @@ export function ScansPage() {
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
       ) : isLoading ? (
         <TableSkeleton columns={6} />
       ) : scans.length === 0 ? (
@@ -355,7 +366,7 @@ export function ScansPage() {
                             {scan.status === "completed" && (
                               <DropdownMenuItem
                                 disabled={exploit.isPending}
-                                onClick={() => onExploit(scan)}
+                                onClick={() => setExploiting(scan)}
                               >
                                 <Crosshair className="h-4 w-4" />
                                 Explorar (prova de impacto)
@@ -393,6 +404,12 @@ export function ScansPage() {
         </div>
       )}
 
+      <ConfirmDialog
+        open={Boolean(exploiting)} onOpenChange={(open) => !open && setExploiting(null)}
+        title="Confirmar prova de impacto" confirmLabel="Provar impacto" loading={exploit.isPending}
+        description={exploiting && <><p>Alvo: <span className="font-mono">{exploiting.target}</span></p><p>Escopo: <span className="font-mono">{exploiting.authorization_scope}</span></p><p>A operação tenta comprovar impacto sob regras de não-dano. O servidor revalida autorização, escopo e o controle do motor antes de cada tentativa.</p></>}
+        onConfirm={() => exploiting && onExploit(exploiting)}
+      />
       <ScanFormDialog open={formOpen} onOpenChange={setFormOpen} />
       <ScanDeleteDialog
         scan={deleting}
@@ -452,6 +469,7 @@ function StatusPill({
   return (
     <button
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
         active

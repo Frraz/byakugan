@@ -1,6 +1,11 @@
 /** Diálogo de criação/edição de artigo da Knowledge Base (RN013 — write: analyst/admin). */
 
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { knowledgeFormSchema } from "@/lib/forms";
+import { FieldError } from "@/components/ui/field-error";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -32,15 +37,8 @@ import {
 import { errorMessage, fieldErrors } from "@/lib/errors";
 import type { FindingCategory, KnowledgeArticle } from "@/lib/types";
 
-const EMPTY: CreateKnowledgeArticleInput = {
-  slug: "",
-  title: "",
-  category: "",
-  summary: "",
-  impact: "",
-  remediation_steps: [],
-  references: [],
-};
+type Values = z.infer<typeof knowledgeFormSchema>;
+const EMPTY: Values = { slug: "", title: "", category: "", summary: "", impact: "", stepsText: "", refsText: "" };
 
 /** "Path Traversal em upload" → "path-traversal-em-upload". */
 function slugify(title: string): string {
@@ -73,37 +71,20 @@ export function KnowledgeArticleFormDialog({
   const create = useCreateKnowledgeArticle();
   const update = useUpdateKnowledgeArticle();
 
-  const [form, setForm] = useState<CreateKnowledgeArticleInput>(EMPTY);
-  const [stepsText, setStepsText] = useState("");
-  const [refsText, setRefsText] = useState("");
+  const { register, watch, reset, setValue, setError, handleSubmit, formState: { errors: formErrors } } = useForm<Values>({ resolver: zodResolver(knowledgeFormSchema), defaultValues: EMPTY });
+  const form = watch();
+  const stepsText = form.stepsText;
+  const refsText = form.refsText;
+  const errors = Object.fromEntries(Object.entries(formErrors).map(([key, error]) => [key, error?.message ?? ""]));
   const [slugTouched, setSlugTouched] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!open) return;
-    setErrors({});
     setSlugTouched(isEdit);
-    if (article) {
-      setForm({
-        slug: article.slug,
-        title: article.title,
-        category: article.category,
-        summary: article.summary,
-        impact: article.impact,
-        remediation_steps: article.remediation_steps,
-        references: article.references,
-      });
-      setStepsText(article.remediation_steps.join("\n"));
-      setRefsText(article.references.join("\n"));
-    } else {
-      setForm(EMPTY);
-      setStepsText("");
-      setRefsText("");
-    }
-  }, [open, article, isEdit]);
+    reset(article ? { slug: article.slug, title: article.title, category: article.category, summary: article.summary, impact: article.impact, stepsText: article.remediation_steps.join("\n"), refsText: article.references.join("\n") } : EMPTY);
+  }, [open, article, isEdit, reset]);
 
-  const set = <K extends keyof CreateKnowledgeArticleInput>(k: K) => (value: CreateKnowledgeArticleInput[K]) =>
-    setForm((f) => ({ ...f, [k]: value }));
+  const set = (key: keyof Values) => (value: string) => setValue(key, value, { shouldValidate: Boolean(formErrors[key]) });
 
   const onTitleChange = (title: string) => {
     set("title")(title);
@@ -113,19 +94,22 @@ export function KnowledgeArticleFormDialog({
   const steps = linesOf(stepsText);
   const refs = linesOf(refsText);
   const pending = create.isPending || update.isPending;
-  const generalError = errors.detail || errors.non_field_errors;
+  const generalError = formErrors.root?.message;
 
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    setErrors({});
+  const onSubmit = (values: Values) => {
+    if (pending) return;
     const payload: CreateKnowledgeArticleInput = {
-      ...form,
-      remediation_steps: steps,
-      references: refs,
+      slug: values.slug, title: values.title, category: values.category, summary: values.summary, impact: values.impact,
+      remediation_steps: linesOf(values.stepsText),
+      references: linesOf(values.refsText),
     };
 
     const onError = (err: unknown) => {
-      setErrors(fieldErrors(err));
+      for (const [field, message] of Object.entries(fieldErrors(err))) {
+        const key = field === "remediation_steps" ? "stepsText" : field === "references" ? "refsText" : field;
+        if (key in EMPTY) setError(key as keyof Values, { message });
+      }
+      setError("root", { message: errorMessage(err) });
       toast.error(errorMessage(err));
     };
     const onSuccess = () => {
@@ -138,7 +122,7 @@ export function KnowledgeArticleFormDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="thin-scroll max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar artigo" : "Novo artigo"}</DialogTitle>
@@ -147,23 +131,25 @@ export function KnowledgeArticleFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-4"><fieldset disabled={pending} className="min-w-0 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="kb-title">Título</Label>
               <Input
                 id="kb-title"
+                {...register("title")}
+                aria-invalid={Boolean(errors.title)} aria-describedby="kb-title-error"
                 required
                 value={form.title}
                 onChange={(e) => onTitleChange(e.target.value)}
                 placeholder="Path Traversal em upload de arquivos"
               />
-              {errors.title && <p className="text-xs text-destructive">{errors.title}</p>}
+              <FieldError id="kb-title-error" message={errors.title} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="kb-category">Categoria</Label>
               <Select value={form.category} onValueChange={set("category")}>
-                <SelectTrigger id="kb-category">
+                <SelectTrigger id="kb-category" disabled={pending} aria-invalid={Boolean(errors.category)} aria-describedby="kb-category-error">
                   <SelectValue placeholder="Selecione…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -174,7 +160,7 @@ export function KnowledgeArticleFormDialog({
                   ))}
                 </SelectContent>
               </Select>
-              {errors.category && <p className="text-xs text-destructive">{errors.category}</p>}
+              <FieldError id="kb-category-error" message={errors.category} />
             </div>
           </div>
 
@@ -182,6 +168,8 @@ export function KnowledgeArticleFormDialog({
             <Label htmlFor="kb-slug">Slug</Label>
             <Input
               id="kb-slug"
+                {...register("slug")}
+                aria-invalid={Boolean(errors.slug)} aria-describedby="kb-slug-error"
               required
               className="font-mono"
               value={form.slug}
@@ -190,48 +178,50 @@ export function KnowledgeArticleFormDialog({
                 set("slug")(e.target.value);
               }}
             />
-            {errors.slug && <p className="text-xs text-destructive">{errors.slug}</p>}
+            <FieldError id="kb-slug-error" message={errors.slug} />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="kb-summary">Resumo</Label>
             <Textarea
               id="kb-summary"
+                {...register("summary")}
+                aria-invalid={Boolean(errors.summary)} aria-describedby="kb-summary-error"
               required
               rows={2}
               value={form.summary}
               onChange={(e) => set("summary")(e.target.value)}
               placeholder="Explicação direta do que é a falha e por que importa."
             />
-            {errors.summary && <p className="text-xs text-destructive">{errors.summary}</p>}
+            <FieldError id="kb-summary-error" message={errors.summary} />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="kb-impact">Impacto</Label>
             <Textarea
               id="kb-impact"
+                {...register("impact")}
+                aria-invalid={Boolean(errors.impact)} aria-describedby="kb-impact-error"
               required
               rows={2}
               value={form.impact}
               onChange={(e) => set("impact")(e.target.value)}
               placeholder="O que um atacante consegue fazer explorando isso."
             />
-            {errors.impact && <p className="text-xs text-destructive">{errors.impact}</p>}
+            <FieldError id="kb-impact-error" message={errors.impact} />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="kb-steps">Remediação — um passo por linha</Label>
               <Textarea
-                id="kb-steps"
+                id="kb-steps" {...register("stepsText")} aria-invalid={Boolean(errors.stepsText)} aria-describedby="kb-steps-error"
                 rows={5}
                 value={stepsText}
-                onChange={(e) => setStepsText(e.target.value)}
+                onChange={(e) => setValue("stepsText", e.target.value)}
                 placeholder={"Validar e normalizar o path recebido\nUsar allowlist de diretórios permitidos"}
               />
-              {errors.remediation_steps && (
-                <p className="text-xs text-destructive">{errors.remediation_steps}</p>
-              )}
+              <FieldError id="kb-steps-error" message={errors.stepsText} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Preview</Label>
@@ -253,13 +243,13 @@ export function KnowledgeArticleFormDialog({
             <div className="space-y-1.5">
               <Label htmlFor="kb-refs">Referências — uma URL por linha (opcional)</Label>
               <Textarea
-                id="kb-refs"
+                id="kb-refs" {...register("refsText")} aria-invalid={Boolean(errors.refsText)} aria-describedby="kb-refs-error"
                 rows={3}
                 className="font-mono text-xs"
                 value={refsText}
-                onChange={(e) => setRefsText(e.target.value)}
+                onChange={(e) => setValue("refsText", e.target.value)}
                 placeholder="https://owasp.org/..."
-              />
+              /><FieldError id="kb-refs-error" message={errors.refsText} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Preview</Label>
@@ -285,11 +275,11 @@ export function KnowledgeArticleFormDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={pending || steps.length === 0}>
+            <Button type="submit" disabled={pending}>
               {pending ? "Salvando…" : isEdit ? "Salvar alterações" : "Criar artigo"}
             </Button>
           </DialogFooter>
-        </form>
+          </fieldset></form>
       </DialogContent>
     </Dialog>
   );

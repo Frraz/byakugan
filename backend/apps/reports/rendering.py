@@ -43,6 +43,7 @@ FINDINGS_CSV_HEADER = [
     "description",
     "evidence",
     "recommendation",
+    "mitre_technique",
 ]
 
 

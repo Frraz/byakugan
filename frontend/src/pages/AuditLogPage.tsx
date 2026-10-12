@@ -148,7 +148,7 @@ export function AuditLogPage() {
     }),
     [debounced, severity, page],
   );
-  const { data, isLoading, isError, error } = useAuditLogs(params);
+  const { data, isLoading, isError, error, refetch } = useAuditLogs(params, isAdmin);
   const results = data?.results ?? [];
 
   return (
@@ -171,7 +171,8 @@ export function AuditLogPage() {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
-                placeholder="Buscar por ação ou origem…"
+                aria-label="Buscar por ação ou origem"
+            placeholder="Buscar por ação ou origem…"
                 className="pl-9"
               />
             </div>
@@ -182,7 +183,7 @@ export function AuditLogPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-full sm:w-44">
+              <SelectTrigger aria-label="Filtrar por severidade" className="w-full sm:w-44">
                 <SelectValue placeholder="Severidade" />
               </SelectTrigger>
               <SelectContent>
@@ -195,7 +196,7 @@ export function AuditLogPage() {
           </div>
 
           {isError ? (
-            <ErrorBanner message={errorMessage(error)} />
+            <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
           ) : isLoading ? (
             <TableSkeleton columns={5} />
           ) : results.length === 0 ? (

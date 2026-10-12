@@ -1,3 +1,4 @@
+import { useUrlState } from "@/hooks/useUrlState";
 /** Targets — cadastro, edição e exclusão de alvos autorizados (RF004, RN001/RN006/RN007). */
 
 import { useMemo, useState } from "react";
@@ -63,10 +64,10 @@ export function TargetsPage() {
   usePageTitle("Targets");
   const { canWrite, isAdmin } = usePermissions();
 
-  const [search, setSearch] = useState("");
-  const [kind, setKind] = useState("all");
-  const [active, setActive] = useState("all");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useUrlState<string>("search", "");
+  const [kind, setKind] = useUrlState<string>("kind", "all");
+  const [active, setActive] = useUrlState<string>("active", "all");
+  const [page, setPage] = useUrlState<number>("page", 1);
   const debouncedSearch = useDebounce(search);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -83,7 +84,7 @@ export function TargetsPage() {
     [debouncedSearch, kind, active, page],
   );
 
-  const { data, isLoading, isError, error } = useTargets(params);
+  const { data, isLoading, isError, error, refetch } = useTargets(params);
   const targets = data?.results ?? [];
 
   const openCreate = () => {
@@ -121,12 +122,13 @@ export function TargetsPage() {
           <Input
             value={search}
             onChange={(e) => resetToFirstPage(setSearch)(e.target.value)}
+            aria-label="Buscar por nome ou valor"
             placeholder="Buscar por nome ou valor…"
             className="pl-9"
           />
         </div>
         <Select value={kind} onValueChange={resetToFirstPage(setKind)}>
-          <SelectTrigger className="w-full sm:w-40">
+          <SelectTrigger aria-label="Filtrar por tipo de alvo" className="w-full sm:w-40">
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -138,7 +140,7 @@ export function TargetsPage() {
           </SelectContent>
         </Select>
         <Select value={active} onValueChange={resetToFirstPage(setActive)}>
-          <SelectTrigger className="w-full sm:w-40">
+          <SelectTrigger aria-label="Filtrar por estado do alvo" className="w-full sm:w-40">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -150,7 +152,7 @@ export function TargetsPage() {
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
       ) : isLoading ? (
         <TableSkeleton columns={6} />
       ) : targets.length === 0 ? (

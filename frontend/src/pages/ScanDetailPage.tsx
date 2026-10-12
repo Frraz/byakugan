@@ -1,6 +1,7 @@
 /** Detalhe do scan — timeline, resumo de severidade, findings, serviços e autorização. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Crosshair, FileBarChart, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -9,6 +10,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { EvidenceStatusBadge, ImpactBadge } from "@/components/evidence/ImpactBadge";
 import { ExploitationTimeline } from "@/components/evidence/ExploitationTimeline";
 import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
+import { ReportFormDialog } from "@/components/reports/ReportFormDialog";
 import { OwaspCoverageMatrix } from "@/components/scans/OwaspCoverageMatrix";
 import { ScanDeleteDialog } from "@/components/scans/ScanDeleteDialog";
 import { ScanProgress } from "@/components/scans/ScanProgress";
@@ -17,10 +19,11 @@ import { Button } from "@/components/ui/button";
 import { CategoryBadge } from "@/components/ui/category-badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CopyButton } from "@/components/ui/copy-button";
+import { DataPagination } from "@/components/ui/data-pagination";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { GlassPanel } from "@/components/ui/glass-panel";
-import { SeverityBadge } from "@/components/ui/severity-badge";
+import { SEVERITY_LABELS, SeverityBadge } from "@/components/ui/severity-badge";
 import { SeverityBar } from "@/components/ui/severity-summary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -37,6 +40,7 @@ import {
 } from "@/hooks/useData";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useUrlState } from "@/hooks/useUrlState";
 import { errorMessage } from "@/lib/errors";
 import { formatDateTime, formatDuration } from "@/lib/format";
 import type { Finding, SeverityCounts } from "@/lib/types";
@@ -74,21 +78,34 @@ export function ScanDetailPage() {
   const navigate = useNavigate();
   const { canWrite, isAdmin } = usePermissions();
   const scan = useScan(id);
-  const findings = useScanFindings(id);
-  const services = useScanServices(id);
-  const evidence = useEvidence({ scan: id });
+  const queryClient = useQueryClient();
+  const status = scan.data?.status;
+  useEffect(() => {
+    if (!status || status === "pending" || status === "running") return;
+    for (const section of ["findings", "services", "owasp-coverage"]) {
+      void queryClient.invalidateQueries({ queryKey: ["scan", id, section] });
+    }
+    void queryClient.invalidateQueries({ queryKey: ["evidence"] });
+  }, [status, id, queryClient]);
+  const active = scan.data?.status === "pending" || scan.data?.status === "running";
+  const findings = useScanFindings(id, active);
+  const services = useScanServices(id, active);
+  const [evidencePage, setEvidencePage] = useUrlState<number>("evidence_page", 1);
+  const evidence = useEvidence({ scan: id, page: evidencePage });
   const owaspCoverage = useOwaspCoverage(id);
 
   const [selected, setSelected] = useState<Finding | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [exploiting, setExploiting] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const cancel = useCancelScan();
   const exploit = useTriggerExploit();
 
   usePageTitle(scan.data ? `Scan · ${scan.data.target}` : "Scan");
 
   if (scan.isLoading) return <Skeleton className="h-64 w-full rounded-2xl" />;
-  if (scan.isError || !scan.data) return <ErrorBanner message="Scan não encontrado." />;
+  if (scan.isError || !scan.data) return <ErrorBanner message={errorMessage(scan.error, "Registro não encontrado.")} onRetry={() => void scan.refetch()} />;
 
   const s = scan.data;
   const isActive = s.status === "pending" || s.status === "running";
@@ -104,10 +121,12 @@ export function ScanDetailPage() {
       return;
     }
     exploit.mutate(s.id, {
-      onSuccess: () =>
+      onSuccess: () => {
+        setExploiting(false);
         toast.success(
           `Exploração enfileirada (${s.exploitable_findings_count} finding(s) explorável(is)) — resultados aparecem aqui e em Evidências.`,
-        ),
+        );
+      },
       onError: (err) => toast.error(errorMessage(err)),
     });
   };
@@ -133,19 +152,17 @@ export function ScanDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={exploit.isPending}
-                onClick={onExploit}
+                disabled={exploit.isPending || s.exploitable_findings_count === 0}
+                onClick={() => setExploiting(true)}
               >
                 <Crosshair className="h-4 w-4" />
                 Explorar
               </Button>
             )}
-            {s.status === "completed" && (
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/reports">
+            {s.status === "completed" && canWrite && (
+              <Button variant="outline" size="sm" onClick={() => setReportOpen(true)}>
                   <FileBarChart className="h-4 w-4" />
                   Gerar relatório
-                </Link>
               </Button>
             )}
             {canWrite && isActive && (
@@ -207,11 +224,11 @@ export function ScanDetailPage() {
             </span>
           </div>
           <SeverityBar counts={counts} className="h-3" />
-          <div className="grid grid-cols-5 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 text-center">
             {(["critical", "high", "medium", "low", "info"] as const).map((sev) => (
               <div key={sev} className="rounded-xl border border-border bg-popover/40 py-2">
                 <p className="text-lg font-bold tabular-nums text-foreground">{counts[sev]}</p>
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{sev}</p>
+                <p className="text-xs text-muted-foreground">{SEVERITY_LABELS[sev]}</p>
               </div>
             ))}
           </div>
@@ -234,7 +251,7 @@ export function ScanDetailPage() {
         </TabsList>
 
         <TabsContent value="findings" className="mt-4">
-          {findings.isLoading ? (
+          {findings.isError ? <ErrorBanner message={errorMessage(findings.error)} onRetry={() => void findings.refetch()} /> : findings.isLoading ? (
             <Skeleton className="h-32 w-full rounded-2xl" />
           ) : findingList.length === 0 ? (
             <EmptyState title="Nenhum finding" hint="Este scan não produziu findings." />
@@ -275,7 +292,7 @@ export function ScanDetailPage() {
         </TabsContent>
 
         <TabsContent value="services" className="mt-4">
-          {services.isLoading ? (
+          {services.isError ? <ErrorBanner message={errorMessage(services.error)} onRetry={() => void services.refetch()} /> : services.isLoading ? (
             <Skeleton className="h-32 w-full rounded-2xl" />
           ) : (services.data ?? []).length === 0 ? (
             <EmptyState title="Nenhum serviço" hint="Nenhum serviço foi descoberto por este scan." />
@@ -312,7 +329,7 @@ export function ScanDetailPage() {
         </TabsContent>
 
         <TabsContent value="evidence" className="mt-4">
-          {evidence.isLoading ? (
+          {evidence.isError ? <ErrorBanner message={errorMessage(evidence.error)} onRetry={() => void evidence.refetch()} /> : evidence.isLoading ? (
             <Skeleton className="h-32 w-full rounded-2xl" />
           ) : evidenceList.length === 0 ? (
             <EmptyState
@@ -328,7 +345,7 @@ export function ScanDetailPage() {
               action={
                 s.status === "completed" &&
                 canWrite && (
-                  <Button variant="secondary" disabled={exploit.isPending} onClick={onExploit}>
+                  <Button variant="secondary" disabled={exploit.isPending || s.exploitable_findings_count === 0} onClick={() => setExploiting(true)}>
                     <Crosshair className="h-4 w-4" />
                     Explorar
                   </Button>
@@ -356,13 +373,14 @@ export function ScanDetailPage() {
                   )}
                   {ev.steps_performed.length > 0 && <ExploitationTimeline steps={ev.steps_performed} />}
                   <Link
-                    to="/evidence"
+                    to={`/evidence?scan=${s.id}`}
                     className="inline-block pt-1 text-xs text-primary hover:underline"
                   >
                     Ver na aba Evidências →
                   </Link>
                 </GlassPanel>
               ))}
+              <DataPagination count={evidence.data?.count ?? 0} page={evidencePage} onPageChange={setEvidencePage} />
             </div>
           )}
         </TabsContent>
@@ -371,7 +389,7 @@ export function ScanDetailPage() {
           {owaspCoverage.isLoading ? (
             <Skeleton className="h-64 w-full rounded-2xl" />
           ) : owaspCoverage.isError || !owaspCoverage.data ? (
-            <ErrorBanner message="Não foi possível carregar a cobertura OWASP deste scan." />
+            <ErrorBanner message="Não foi possível carregar a cobertura OWASP deste scan." onRetry={() => void owaspCoverage.refetch()} />
           ) : (
             <OwaspCoverageMatrix coverage={owaspCoverage.data} />
           )}
@@ -400,6 +418,7 @@ export function ScanDetailPage() {
       </Tabs>
 
       <FindingDetailSheet finding={selected} onOpenChange={(open) => !open && setSelected(null)} />
+      <ReportFormDialog open={reportOpen} onOpenChange={setReportOpen} initialScan={s} />
 
       <ScanDeleteDialog
         scan={deleting ? s : null}
@@ -410,6 +429,12 @@ export function ScanDetailPage() {
         }}
       />
 
+      <ConfirmDialog
+        open={exploiting} onOpenChange={setExploiting}
+        title="Confirmar prova de impacto" confirmLabel="Provar impacto" loading={exploit.isPending}
+        description={<><p>Alvo: <span className="font-mono">{s.target}</span></p><p>Escopo: <span className="font-mono">{s.authorization_scope}</span></p><p>A operação tenta comprovar impacto sob regras de não-dano. O servidor revalida autorização, escopo e o controle do motor antes de cada tentativa.</p></>}
+        onConfirm={onExploit}
+      />
       <ConfirmDialog
         open={cancelling}
         onOpenChange={setCancelling}

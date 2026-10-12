@@ -7,6 +7,8 @@ alvos afetados e as ocorrências para o painel de detalhe.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from django.urls import reverse
 
@@ -57,7 +59,9 @@ def test_distinct_titles_are_distinct_groups(viewer_client):
     scan = ScanFactory()
     asset = Asset.objects.create(ip="192.168.0.10")
     _finding(asset, scan, title="SQL Injection", severity="high")
-    _finding(asset, scan, title="Reflected XSS", category="injection", severity="medium")
+    _finding(
+        asset, scan, title="Reflected XSS", category="injection", severity="medium"
+    )
 
     resp = viewer_client.get(reverse("scans:finding-grouped"))
     assert resp.status_code == 200
@@ -76,4 +80,4 @@ def test_grouped_max_severity_wins(viewer_client):
     resp = viewer_client.get(reverse("scans:finding-grouped"))
     group = resp.data["results"][0]
     assert group["severity"] == "critical"
-    assert group["cvss"] == 9.8
+    assert Decimal(str(group["cvss"])) == Decimal("9.8")

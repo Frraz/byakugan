@@ -8,7 +8,7 @@ const DOT: Record<keyof SeverityCounts, string> = {
   critical: "bg-destructive text-destructive",
   high: "bg-sev-high text-sev-high",
   medium: "bg-warning text-warning",
-  low: "bg-primary text-primary",
+  low: "bg-sev-low text-sev-low",
   info: "bg-sev-info text-sev-info",
 };
 
@@ -37,6 +37,7 @@ export function SeveritySummary({
           title={`${SEVERITY_LABELS[s]}: ${counts[s]}`}
         >
           <span className={cn("h-1.5 w-1.5 rounded-full", DOT[s].split(" ")[0])} />
+          <span>{SEVERITY_LABELS[s]}</span>
           {counts[s]}
         </span>
       ))}
@@ -51,7 +52,7 @@ export function SeverityBar({ counts, className }: { counts: SeverityCounts; cla
     return <div className={cn("h-2 w-full rounded-full bg-secondary", className)} />;
   }
   return (
-    <div className={cn("flex h-2 w-full overflow-hidden rounded-full bg-secondary", className)}>
+    <div role="img" aria-label={SEVERITY_ORDER.map((severity) => `${SEVERITY_LABELS[severity]}: ${counts[severity]}`).join(", ")} className={cn("flex h-2 w-full overflow-hidden rounded-full bg-secondary", className)}>
       {SEVERITY_ORDER.map((s) =>
         counts[s] > 0 ? (
           <div

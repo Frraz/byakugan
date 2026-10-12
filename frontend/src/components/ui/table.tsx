@@ -57,6 +57,13 @@ const TableRow = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <tr
     ref={ref}
+    tabIndex={props.onClick ? 0 : undefined}
+    onKeyDown={(event) => {
+      if (props.onClick && event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        event.currentTarget.click();
+      }
+    }}
     className={cn(
       "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
       className

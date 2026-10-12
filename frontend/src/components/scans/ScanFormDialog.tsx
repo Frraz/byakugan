@@ -1,6 +1,6 @@
 /** Diálogo de criação de scan — via alvo cadastrado ou inline (RN001/RN002/RN007). */
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { AlertTriangle, Check, Crosshair, Info, Radar, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ErrorBanner } from "@/components/ui/error-banner";
+import { DataPagination } from "@/components/ui/data-pagination";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,6 +30,8 @@ import { useCreateScan, useTargets } from "@/hooks/useData";
 import { errorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { targetValueSchema } from "@/lib/forms";
+import { useDebounce } from "@/hooks/useDebounce";
 import type { Intensity, PortSet, Target } from "@/lib/types";
 
 const EXPIRING_SOON_DAYS = 7;
@@ -180,7 +183,12 @@ export function ScanFormDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const create = useCreateScan();
-  const { data: targetsData } = useTargets({ is_active: "true" });
+  const resetCreate = create.reset;
+  const [targetPage, setTargetPage] = useState(1);
+  const [targetSearch, setTargetSearch] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const debouncedTargetSearch = useDebounce(targetSearch);
+  const { data: targetsData, isLoading: targetsLoading, isError: targetsFailed, error: targetsError, refetch: retryTargets } = useTargets({ is_active: "true", search: debouncedTargetSearch || undefined, page: targetPage }, open);
   const targets = targetsData?.results ?? [];
 
   const [mode, setMode] = useState<"target" | "inline">("target");
@@ -198,6 +206,10 @@ export function ScanFormDialog({
 
   useEffect(() => {
     if (open) {
+      resetCreate();
+      setTargetPage(1);
+      setTargetSearch("");
+      setValidationError("");
       setMode("target");
       setScanType("full");
       setTargetRef("");
@@ -208,7 +220,7 @@ export function ScanFormDialog({
       setWordlistSize("");
       setExcludedChecks(new Set());
     }
-  }, [open]);
+  }, [open, resetCreate]);
 
   // Trocar o tipo de scan muda o menu de checks disponíveis — reinicia a seleção.
   useEffect(() => {
@@ -229,10 +241,7 @@ export function ScanFormDialog({
     });
   };
 
-  const selectedTarget = useMemo(
-    () => targets.find((t) => t.id === targetRef),
-    [targets, targetRef],
-  );
+  const selectedTarget = targets.find((t) => t.id === targetRef);
   const targetLabel =
     mode === "target" ? selectedTarget?.value ?? "—" : inline.target || "—";
   const selectedTargetExpired =
@@ -240,6 +249,13 @@ export function ScanFormDialog({
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (create.isPending || selectedTargetExpired) return;
+    setValidationError("");
+    if (mode === "inline") {
+      const parsed = targetValueSchema.safeParse(inline.target);
+      if (!parsed.success) { setValidationError(parsed.error.issues[0].message); return; }
+    } else if (!selectedTarget) { setValidationError("Selecione um alvo cadastrado."); return; }
+    if (excludedChecks.size === availableChecks.length) { setValidationError("Habilite pelo menos um check para iniciar a análise."); return; }
 
     const options: Record<string, unknown> = { intensity };
     if (exploit && intensity === "aggressive") options.exploit = true;
@@ -256,7 +272,7 @@ export function ScanFormDialog({
         ? { scan_type: scanType, target_ref: targetRef, options }
         : {
             scan_type: scanType,
-            target: inline.target,
+            target: inline.target.trim(),
             ...(inline.authorization_scope.trim()
               ? { authorization_scope: inline.authorization_scope.trim() }
               : {}),
@@ -275,8 +291,8 @@ export function ScanFormDialog({
     "Delimita exatamente o que o Byakugan pode tocar. Todo host testado é revalidado contra este escopo antes de cada probe e de cada tentativa de exploração (fail-closed). Deixe vazio para usar o próprio alvo.";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="thin-scroll max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={(next) => !create.isPending && onOpenChange(next)}>
+      <DialogContent className="thin-scroll sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Novo scan</DialogTitle>
           <DialogDescription>
@@ -285,6 +301,7 @@ export function ScanFormDialog({
         </DialogHeader>
 
         <form onSubmit={onSubmit} className="space-y-6">
+          <fieldset disabled={create.isPending} className="min-w-0 space-y-6">
           {/* 1 — Tipo de scan */}
           <section className="space-y-2">
             <SectionLabel step={1}>Tipo de scan</SectionLabel>
@@ -313,8 +330,11 @@ export function ScanFormDialog({
 
             {mode === "target" ? (
               <div className="space-y-1.5">
+                <Input aria-label="Buscar alvo cadastrado" placeholder="Buscar alvos…" value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetPage(1); setTargetRef(""); }} />
+                {targetsLoading && <p role="status" className="text-sm text-muted-foreground">Carregando alvos…</p>}
+                {targetsFailed && <ErrorBanner message={errorMessage(targetsError)} onRetry={() => void retryTargets()} />}
                 <Select value={targetRef} onValueChange={setTargetRef}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Alvo cadastrado" disabled={targetsLoading || targetsFailed}>
                     <SelectValue placeholder="Selecione um alvo…" />
                   </SelectTrigger>
                   <SelectContent>
@@ -331,6 +351,8 @@ export function ScanFormDialog({
                     )}
                   </SelectContent>
                 </Select>
+                <DataPagination count={targetsData?.count ?? 0} page={targetPage} onPageChange={(page) => { setTargetPage(page); setTargetRef(""); }} />
+                {selectedTarget && <dl className="space-y-1 rounded-md border border-border bg-muted p-3 text-sm"><dt className="text-muted-foreground">Escopo autorizado</dt><dd className="break-all font-mono">{selectedTarget.authorization_scope || "Escopo não informado"}</dd><dt className="text-muted-foreground">Validade</dt><dd>{selectedTarget.authorization_expires_at ? formatDate(selectedTarget.authorization_expires_at) : "Sem expiração informada"}</dd></dl>}
                 {selectedTarget &&
                   (() => {
                     const status = targetAuthStatus(selectedTarget);
@@ -365,6 +387,7 @@ export function ScanFormDialog({
                   <SectionLabel hint={scopeHint}>Escopo autorizado (opcional)</SectionLabel>
                   <Input
                     id="s-scope"
+                    aria-label="Escopo autorizado"
                     className="font-mono"
                     value={inline.authorization_scope}
                     onChange={(e) =>
@@ -396,7 +419,7 @@ export function ScanFormDialog({
           {/* 4 — Exploração (prova de impacto) */}
           <section className="space-y-2">
             <SectionLabel step={4} hint="A exploração ativa prova o impacto real dos findings (ex.: extrair versão do banco via SQLi). É sempre não-destrutiva (RoE) e exige o motor de exploração habilitado. Só disponível em intensidade aggressive.">
-              4 · Exploração (prova de impacto)
+              Exploração (prova de impacto)
             </SectionLabel>
             <button
               type="button"
@@ -437,13 +460,13 @@ export function ScanFormDialog({
           {/* 5 — Ajustes finos */}
           <section className="space-y-3">
             <SectionLabel step={5} hint="Padrões vêm do perfil de intensidade escolhido; limites máximos são impostos pelo backend.">
-              5 · Ajustes finos (opcional)
+              Ajustes finos (opcional)
             </SectionLabel>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>Conjunto de portas</Label>
+                <Label htmlFor="s-ports">Conjunto de portas</Label>
                 <Select value={portSet} onValueChange={(v) => setPortSet(v as PortSet)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="s-ports">
                     <SelectValue placeholder="Padrão do perfil" />
                   </SelectTrigger>
                   <SelectContent>
@@ -514,6 +537,8 @@ export function ScanFormDialog({
           </div>
 
           {create.isError && <ErrorBanner message={errorMessage(create.error)} />}
+          {validationError && <ErrorBanner message={validationError} />}
+          <p className="text-sm text-muted-foreground">O servidor valida autorização, escopo e disponibilidade dos motores antes da execução. O envio não garante que o scan será iniciado.</p>
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
@@ -525,7 +550,7 @@ export function ScanFormDialog({
                 create.isPending ||
                 (mode === "target" && !targetRef) ||
                 (mode === "inline" && !inline.target.trim()) ||
-                selectedTargetExpired
+                selectedTargetExpired || excludedChecks.size === availableChecks.length
               }
             >
               {create.isPending
@@ -535,6 +560,7 @@ export function ScanFormDialog({
                   : "Iniciar scan"}
             </Button>
           </DialogFooter>
+          </fieldset>
         </form>
       </DialogContent>
     </Dialog>

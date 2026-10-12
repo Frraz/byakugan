@@ -109,12 +109,14 @@
 - [x] Abas Assets e Knowledge Base removidas da navegação (dados mantidos inline/drill-down)
 
 ### Backlog de UI/UX (evolução futura)
+- [~] Acabamento e QA do redesign (Fase 6 do plano / referência “Fase E” nos tokens) — ver [ponto de retomada](redesign-status.md)
 - [x] Aba Evidências no frontend (prova de exploração + playbook curado por finding)
-- [ ] Painel/visualização da matriz de cobertura OWASP (2021 × 2025)
+- [x] Painel/visualização da matriz de cobertura OWASP (2021 × 2025) no detalhe do scan (`OwaspCoverageMatrix`)
 - [ ] Formulários com react-hook-form + zod (validação client-side rica)
 - [ ] Busca global (cmd-k) na topbar
 - [ ] Geração de relatórios assíncrona (Celery) para scans com muitos findings
-- [ ] Telas de Audit Logs, perfil (`/me`) e gestão de usuários
+- [x] Tela de Audit Logs (`AuditLogPage`, rota `/audit-log`)
+- [ ] Telas de perfil (`/me`) e gestão de usuários
 
 ## V2
 - [ ] OpenSearch (busca/agregação de findings)

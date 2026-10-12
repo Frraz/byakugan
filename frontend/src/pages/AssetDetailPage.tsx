@@ -6,6 +6,8 @@ import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "@/components/PageHeader";
 import { FindingDetailSheet } from "@/components/findings/FindingDetailSheet";
+import { DataPagination } from "@/components/ui/data-pagination";
+import { CategoryBadge } from "@/components/ui/category-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { GlassPanel } from "@/components/ui/glass-panel";
@@ -15,19 +17,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAsset, useFindings } from "@/hooks/useData";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { errorMessage } from "@/lib/errors";
 import { formatRelative } from "@/lib/format";
 import type { Finding } from "@/lib/types";
 
 export function AssetDetailPage() {
   const { id = "" } = useParams();
   const asset = useAsset(id);
-  const findings = useFindings({ asset: id });
+  const [page, setPage] = useState(1);
+  const findings = useFindings({ asset: id, page });
   const [selected, setSelected] = useState<Finding | null>(null);
 
   usePageTitle(asset.data ? `Ativo · ${asset.data.hostname ?? asset.data.ip ?? ""}` : "Ativo");
 
   if (asset.isLoading) return <Skeleton className="h-64 w-full rounded-2xl" />;
-  if (asset.isError || !asset.data) return <ErrorBanner message="Ativo não encontrado." />;
+  if (asset.isError || !asset.data) return <ErrorBanner message={errorMessage(asset.error, "Registro não encontrado.")} onRetry={() => void asset.refetch()} />;
 
   const a = asset.data;
   const services = a.services ?? [];
@@ -56,7 +60,7 @@ export function AssetDetailPage() {
         ].map((item) => (
           <GlassPanel key={item.label}>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-            <p className={`mt-1 ${item.mono ? "font-mono text-primary" : "text-foreground"}`}>
+            <p className={`mt-1 break-all ${item.mono ? "font-mono text-primary" : "text-foreground"}`}>
               {item.value}
             </p>
           </GlassPanel>
@@ -65,14 +69,14 @@ export function AssetDetailPage() {
 
       <Tabs defaultValue="findings" className="mt-8">
         <TabsList>
-          <TabsTrigger value="findings">Findings ({findingList.length})</TabsTrigger>
+          <TabsTrigger value="findings">Findings ({findings.data?.count ?? "—"})</TabsTrigger>
           <TabsTrigger value="services">Serviços ({services.length})</TabsTrigger>
           <TabsTrigger value="technologies">Tecnologias ({technologies.length})</TabsTrigger>
           <TabsTrigger value="dns">DNS ({dnsRecords.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="findings" className="mt-4">
-          {findings.isLoading ? (
+          {findings.isError ? <ErrorBanner message={errorMessage(findings.error)} onRetry={() => void findings.refetch()} /> : findings.isLoading ? (
             <Skeleton className="h-32 w-full rounded-2xl" />
           ) : findingList.length === 0 ? (
             <EmptyState
@@ -100,13 +104,14 @@ export function AssetDetailPage() {
                       <TableCell className="font-mono text-muted-foreground">
                         {f.cvss ?? "—"}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{f.category}</TableCell>
+                      <TableCell><CategoryBadge category={f.category} /></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           )}
+          <DataPagination count={findings.data?.count ?? 0} page={page} onPageChange={setPage} />
         </TabsContent>
 
         <TabsContent value="services" className="mt-4">
@@ -178,7 +183,7 @@ export function AssetDetailPage() {
                         {tech.confidence}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{tech.source || "—"}</TableCell>
-                      <TableCell className="max-w-xs truncate text-muted-foreground">
+                      <TableCell className="max-w-xs break-all whitespace-normal text-muted-foreground">
                         {tech.evidence || "—"}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -220,7 +225,7 @@ export function AssetDetailPage() {
                       <TableCell className="font-mono text-sm text-muted-foreground">
                         {rec.domain}
                       </TableCell>
-                      <TableCell className="max-w-md truncate font-mono text-sm text-primary">
+                      <TableCell className="max-w-md break-all whitespace-normal font-mono text-sm text-primary">
                         {rec.value}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">

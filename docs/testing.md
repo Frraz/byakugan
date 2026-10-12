@@ -32,6 +32,10 @@ docker compose run --rm backend pytest --cov=apps --cov-report=term-missing --co
 - Unit/componentes: **Vitest** + **React Testing Library**.
 - Foco em comportamento (o que o usuário vê/faz), não em detalhes de implementação.
 - Mock de rede via MSW (Mock Service Worker) quando aplicável.
+- Relatórios: testes de componente cobrem carregamento/erro/vazio, nova tentativa, paginação de scans,
+  nomes acessíveis dos campos, consulta desabilitada com diálogo fechado, liberação de URL do PDF
+  e descarte de leitura JSON atrasada. Ver `frontend/src/components/reports/__tests__/`.
+- Aceite visual e limites da rodada de redesign: [estado do redesign](redesign-status.md).
 
 Rodar:
 ```bash

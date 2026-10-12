@@ -1,4 +1,4 @@
-/** Painel glass: superfície translúcida com blur e borda sutil (docs/ui.md). */
+/** Painel padrão: superfície sólida e borda discreta (docs/ui.md). */
 
 import type { HTMLAttributes } from "react";
 

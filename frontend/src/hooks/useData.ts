@@ -42,10 +42,11 @@ export type TargetFilters = {
   page?: number;
 }
 
-export function useTargets(params?: TargetFilters) {
+export function useTargets(params?: TargetFilters, enabled = true) {
   return useQuery({
     queryKey: ["targets", params],
     queryFn: () => apiFetch<Paginated<Target>>("/targets/", { params }),
+    enabled,
   });
 }
 
@@ -95,10 +96,11 @@ export type ScanFilters = {
   page?: number;
 }
 
-export function useScans(params?: ScanFilters) {
+export function useScans(params?: ScanFilters, enabled = true) {
   return useQuery({
     queryKey: ["scans", params],
     queryFn: () => apiFetch<Paginated<Scan>>("/scans/", { params }),
+    enabled,
     // Polling adaptativo: só refetch enquanto houver scan ativo (evita 429).
     refetchInterval: (query) => (hasActiveScan(query.state.data) ? 4000 : false),
   });
@@ -124,17 +126,19 @@ export function useScan(id: string) {
   });
 }
 
-export function useScanFindings(id: string) {
+export function useScanFindings(id: string, active = false) {
   return useQuery({
     queryKey: ["scan", id, "findings"],
     queryFn: () => apiFetch<Finding[]>(`/scans/${id}/findings/`),
+    refetchInterval: active ? 3000 : false,
   });
 }
 
-export function useScanServices(id: string) {
+export function useScanServices(id: string, active = false) {
   return useQuery({
     queryKey: ["scan", id, "services"],
     queryFn: () => apiFetch<Service[]>(`/scans/${id}/services/`),
+    refetchInterval: active ? 3000 : false,
   });
 }
 
@@ -313,6 +317,7 @@ export function useEvidence(params?: EvidenceFilters) {
   return useQuery({
     queryKey: ["evidence", params],
     queryFn: () => apiFetch<Paginated<Evidence>>("/evidence/", { params }),
+    refetchInterval: 15000,
   });
 }
 
@@ -456,9 +461,10 @@ export function useAuditLogs(params?: {
   severity?: string;
   search?: string;
   page?: number;
-}) {
+}, enabled = true) {
   return useQuery({
     queryKey: ["audit-logs", params],
     queryFn: () => apiFetch<Paginated<AuditLogEntry>>("/audit-logs/", { params }),
+    enabled,
   });
 }

@@ -34,9 +34,13 @@ def test_build_summary_reflects_findings():
 
 def test_build_findings_section_includes_evidence_and_cve():
     scan = make_completed_scan_with_findings()
+    finding = scan.findings.first()
+    finding.mitre_technique = "T1190"
+    finding.save(update_fields=["mitre_technique"])
     findings = build_findings_section(scan)
     assert len(findings) == 1
     assert findings[0]["cve"] == "CVE-2024-1111"
+    assert findings[0]["mitre_technique"] == "T1190"
     assert findings[0]["evidence"]
     assert findings[0]["recommendation"]
     assert findings[0]["asset"] == "web01 (192.168.0.10)"
@@ -96,7 +100,9 @@ def test_build_references_includes_nvd_link():
     refs = build_references(scan)
     assert len(refs) == 1
     assert refs[0]["cve"] == "CVE-2024-1111"
-    assert any("nvd.nist.gov/vuln/detail/CVE-2024-1111" in link for link in refs[0]["links"])
+    assert any(
+        "nvd.nist.gov/vuln/detail/CVE-2024-1111" in link for link in refs[0]["links"]
+    )
     assert "https://example.com/cve" in refs[0]["links"]
 
 
@@ -237,7 +243,10 @@ def test_build_attack_narrative_ignores_non_proven_evidence():
 def test_build_attack_narrative_includes_proven_step_with_mitre_technique():
     scan = make_completed_scan_with_findings()
     _proven_evidence(
-        scan, playbook_key="injection.sqli-error", impact_level="db-read", proof="Versão: 8.0"
+        scan,
+        playbook_key="injection.sqli-error",
+        impact_level="db-read",
+        proof="Versão: 8.0",
     )
 
     narrative = build_attack_narrative(scan)
@@ -249,12 +258,16 @@ def test_build_attack_narrative_includes_proven_step_with_mitre_technique():
     assert entry["mitre_techniques"] == ["T1190"]
     assert entry["steps"][0]["playbook_key"] == "injection.sqli-error"
     assert entry["steps"][0]["proof"] == "Versão: 8.0"
-    assert entry["steps"][0]["mitre_technique_name"] == "Exploit Public-Facing Application"
+    assert (
+        entry["steps"][0]["mitre_technique_name"] == "Exploit Public-Facing Application"
+    )
 
 
 def test_build_attack_narrative_orders_steps_by_impact_severity():
     scan = make_completed_scan_with_findings()
-    _proven_evidence(scan, playbook_key="injection.ssrf", impact_level="info-disclosure")
+    _proven_evidence(
+        scan, playbook_key="injection.ssrf", impact_level="info-disclosure"
+    )
     _proven_evidence(scan, playbook_key="injection.sqli-error", impact_level="db-read")
 
     narrative = build_attack_narrative(scan)
@@ -271,12 +284,18 @@ def test_build_attack_narrative_orders_assets_by_max_impact_descending():
     other_asset = Asset.objects.create(ip="192.168.0.20", hostname="web02")
     _proven_evidence(scan, playbook_key="injection.xss", impact_level="session")
     _proven_evidence(
-        scan, playbook_key="injection.command-injection", impact_level="rce", asset=other_asset
+        scan,
+        playbook_key="injection.command-injection",
+        impact_level="rce",
+        asset=other_asset,
     )
 
     narrative = build_attack_narrative(scan)
 
-    assert [n["asset"] for n in narrative] == ["web02 (192.168.0.20)", "web01 (192.168.0.10)"]
+    assert [n["asset"] for n in narrative] == [
+        "web02 (192.168.0.20)",
+        "web01 (192.168.0.10)",
+    ]
 
 
 def test_build_attack_narrative_surfaces_applicable_chain():

@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEvidence, usePlaybook, usePlaybooks } from "@/hooks/useData";
 import { useDebounce } from "@/hooks/useDebounce";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useUrlState } from "@/hooks/useUrlState";
 import { errorMessage } from "@/lib/errors";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -135,14 +136,15 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
 ];
 
 function EvidenceTab() {
-  const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useUrlState<number>("page", 1);
+  const [statusFilter, setStatusFilter] = useUrlState<string>("status", "all");
+  const [scan] = useUrlState<string>("scan", "");
   const [selected, setSelected] = useState<Evidence | null>(null);
   const params = useMemo(
-    () => ({ status: statusFilter === "all" ? undefined : statusFilter, page }),
-    [statusFilter, page],
+    () => ({ status: statusFilter === "all" ? undefined : statusFilter, scan: scan || undefined, page }),
+    [statusFilter, scan, page],
   );
-  const { data, isLoading, isError, error } = useEvidence(params);
+  const { data, isLoading, isError, error, refetch } = useEvidence(params);
   const results = data?.results ?? [];
 
   const filters = (
@@ -167,7 +169,7 @@ function EvidenceTab() {
     </div>
   );
 
-  if (isError) return <ErrorBanner message={errorMessage(error)} />;
+  if (isError) return <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />;
 
   return (
     <div className="space-y-4">
@@ -217,11 +219,11 @@ function EvidenceTab() {
 }
 
 function PlaybooksTab() {
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useUrlState<string>("playbook_search", "");
+  const [page, setPage] = useUrlState<number>("playbook_page", 1);
   const debounced = useDebounce(search);
   const params = useMemo(() => ({ search: debounced || undefined, page }), [debounced, page]);
-  const { data, isLoading, isError, error } = usePlaybooks(params);
+  const { data, isLoading, isError, error, refetch } = usePlaybooks(params);
   const results = data?.results ?? [];
 
   return (
@@ -234,13 +236,14 @@ function PlaybooksTab() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          placeholder="Buscar por classe de vulnerabilidade…"
+          aria-label="Buscar por classe de vulnerabilidade"
+            placeholder="Buscar por classe de vulnerabilidade…"
           className="pl-9"
         />
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
       ) : isLoading ? (
         <TableSkeleton columns={3} />
       ) : results.length === 0 ? (
@@ -265,13 +268,14 @@ function PlaybooksTab() {
 
 export function EvidencePage() {
   usePageTitle("Evidências");
+  const [tab, setTab] = useUrlState<string>("tab", "evidence");
   return (
     <div>
       <PageHeader
         title="Evidências"
         description="Prova de exploração automatizada (o que o Byakugan comprovou) e guias de exploração por vulnerabilidade — como explorar e até onde dá para ir."
       />
-      <Tabs defaultValue="evidence">
+      <Tabs value={tab === "playbooks" ? "playbooks" : "evidence"} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="evidence">Exploração comprovada</TabsTrigger>
           <TabsTrigger value="playbooks">Playbooks</TabsTrigger>

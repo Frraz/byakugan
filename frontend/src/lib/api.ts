@@ -27,21 +27,35 @@ export class ApiError extends Error {
   }
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+let pendingRefresh: { refresh: string; promise: Promise<string | null> } | null = null;
+
+async function renewAccessToken(): Promise<string | null> {
   const { refresh, setAccess, clear } = useAuthStore.getState();
-  if (!refresh) return null;
+  if (!refresh) { clear({ expired: true }); return null; }
   const resp = await fetch(`${API_BASE_URL}/auth/refresh/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh }),
   });
+  if (useAuthStore.getState().refresh !== refresh) return null;
   if (!resp.ok) {
     clear({ expired: true });
     return null;
   }
   const data = (await resp.json()) as { access: string };
+  if (useAuthStore.getState().refresh !== refresh) return null;
   setAccess(data.access);
   return data.access;
+}
+
+function refreshAccessToken(): Promise<string | null> {
+  const refresh = useAuthStore.getState().refresh ?? "";
+  if (pendingRefresh?.refresh === refresh) return pendingRefresh.promise;
+  const promise = renewAccessToken().finally(() => {
+    if (pendingRefresh?.promise === promise) pendingRefresh = null;
+  });
+  pendingRefresh = { refresh, promise };
+  return promise;
 }
 
 type ParamValue = string | number | boolean | null | undefined;
@@ -74,12 +88,15 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
     });
   };
 
+  const sessionRefresh = useAuthStore.getState().refresh;
   let token = useAuthStore.getState().access;
   let resp = await doRequest(token);
 
-  if (resp.status === 401 && auth) {
-    token = await refreshAccessToken();
+  if (resp.status === 401 && auth && useAuthStore.getState().refresh === sessionRefresh) {
+    const latestToken = useAuthStore.getState().access;
+    token = latestToken && latestToken !== token ? latestToken : await refreshAccessToken();
     if (token) resp = await doRequest(token);
+    if (resp.status === 401 && useAuthStore.getState().refresh === sessionRefresh) useAuthStore.getState().clear({ expired: true });
   }
 
   if (resp.status === 204 || resp.status === 205) return undefined as T;
@@ -109,12 +126,15 @@ export async function fetchBlob(path: string): Promise<Blob> {
   const doRequest = (token: string | null) =>
     fetch(url.toString(), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 
+  const sessionRefresh = useAuthStore.getState().refresh;
   let token = useAuthStore.getState().access;
   let resp = await doRequest(token);
 
-  if (resp.status === 401) {
-    token = await refreshAccessToken();
+  if (resp.status === 401 && useAuthStore.getState().refresh === sessionRefresh) {
+    const latestToken = useAuthStore.getState().access;
+    token = latestToken && latestToken !== token ? latestToken : await refreshAccessToken();
     if (token) resp = await doRequest(token);
+    if (resp.status === 401 && useAuthStore.getState().refresh === sessionRefresh) useAuthStore.getState().clear({ expired: true });
   }
 
   if (!resp.ok) throw new ApiError(resp.status, await resp.text());

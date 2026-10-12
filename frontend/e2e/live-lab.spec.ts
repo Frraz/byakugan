@@ -1,0 +1,74 @@
+/** Integração opt-in com scripts/redesign_lab.py; nenhum endpoint é simulado. */
+import { readFileSync } from "node:fs";
+import { test, expect } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+
+test("real API: login, target, findings, evidence, reports and admin account", async ({ page }, testInfo) => {
+  test.skip(process.env.BYAKUGAN_LIVE_LAB !== "1", "Inicie scripts/redesign_lab.py e defina BYAKUGAN_LIVE_LAB=1.");
+  const lab = JSON.parse(readFileSync("/tmp/byakugan-redesign-lab.json", "utf8")) as { email: string; password: string; scan: string; asset: string };
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({ url: `http://127.0.0.1:8001${url.pathname}${url.search}` });
+    await route.fulfill({ response });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/targets");
+  await expect(page).toHaveURL(/login/);
+  await expect(page.getByLabel("Email", { exact: true })).toBeFocused();
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await page.getByLabel("Email", { exact: true }).fill(lab.email);
+  await page.getByLabel("Senha", { exact: true }).fill(lab.password);
+  await page.getByRole("button", { name: "Mostrar senha", exact: true }).click();
+  await expect(page.getByLabel("Senha", { exact: true })).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL(/targets/);
+  await page.getByRole("button", { name: "Novo alvo", exact: true }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("Alvo QA de interface");
+  await page.getByLabel("Valor (host / domínio / IP / CIDR)").fill("qa.example.test");
+  await page.getByRole("button", { name: "Cadastrar alvo", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Alvo QA de interface", { exact: true })).toBeVisible();
+  await page.goto(`/scans/${lab.scan}`);
+  await expect(page.locator("h1")).toBeVisible();
+  await page.getByRole("tab", { name: /Evidências/ }).click();
+  await expect(page.locator("main")).toContainText("Cenário de laboratório: motor desligado.");
+  await page.getByRole("tab", { name: /OWASP/ }).click();
+  await expect(page.locator("main")).toContainText("2025");
+  await page.goto(`/assets/${lab.asset}`);
+  await expect(page.locator("main")).toContainText("web01");
+  await page.goto("/reports");
+  for (const format of ["PDF", "JSON"]) {
+    await page.getByRole("button", { name: "Gerar relatório", exact: true }).click();
+    await page.getByRole("combobox", { name: "Scan concluído" }).click();
+    await page.getByRole("option", { name: /example/ }).first().click();
+    await page.getByRole("combobox", { name: "Tipo", exact: true }).click();
+    await page.getByRole("option", { name: "Técnico", exact: true }).click();
+    await page.getByRole("combobox", { name: "Formato", exact: true }).click();
+    await page.getByRole("option", { name: format, exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Gerar relatório", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Visualizar", exact: true }).first()).toBeVisible();
+    await page.getByRole("button", { name: "Visualizar", exact: true }).first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    if (format === "JSON") await expect(page.getByRole("dialog")).toContainText("mitre_technique");
+    else await expect(page.getByTitle("Pré-visualização do relatório")).toBeVisible();
+    const downloaded = page.waitForEvent("download");
+    await page.getByRole("dialog").getByRole("button", { name: "Baixar", exact: true }).click();
+    const download = await downloaded;
+    expect(await download.failure()).toBeNull();
+    await download.saveAs(testInfo.outputPath(download.suggestedFilename()));
+    await page.keyboard.press("Escape");
+  }
+  await page.goto("/account");
+  await expect(page.locator("main")).toContainText(lab.email);
+  await page.goto("/users/new");
+  await page.getByLabel("E-mail", { exact: true }).fill(`qa-viewer-${Date.now()}@example.test`);
+  await page.getByLabel("Senha inicial", { exact: true }).fill(lab.password);
+  await page.getByRole("button", { name: "Cadastrar usuário", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Conta criada" })).toBeVisible();
+  await expect(page.getByLabel("Senha inicial", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "Sair", exact: true }).click();
+  await expect(page).toHaveURL(/login/);
+  expect(errors).toEqual([]);
+});

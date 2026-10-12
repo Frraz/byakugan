@@ -30,7 +30,7 @@ export function DataPagination({
         <span className="font-medium text-foreground">{to}</span> de{" "}
         <span className="font-medium text-foreground">{count}</span>
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2">
         <Button
           variant="outline"
           size="sm"

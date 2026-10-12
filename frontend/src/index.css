@@ -8,7 +8,7 @@
  * ambiente escuro de precisão editorial, acento em latão mineral — sem
  * neon, sem glassmorphism decorativo. `:root` define o tema claro
  * (equivalente editorial, menos usado); `.dark` é o tema padrão da
- * área operacional. Valores iniciais — revalidar contraste na Fase E (QA).
+ * área operacional. Contraste validado na Fase 6 (QA); ver docs/redesign-status.md.
  */
 :root {
   font-family: "Inter Variable", Inter, system-ui, sans-serif;
@@ -21,26 +21,26 @@
   --card-foreground: 215 12% 12%;
   --popover: 0 0% 100%;
   --popover-foreground: 215 12% 12%;
-  --primary: 37 47% 37%;
+  --primary: 37 52% 30%;
   --primary-foreground: 0 0% 100%;
   --secondary: 43 16% 92%;
   --secondary-foreground: 215 12% 12%;
   --muted: 43 18% 92%;
-  --muted-foreground: 218 5% 44%;
+  --muted-foreground: 218 6% 36%;
   --accent: 43 16% 92%;
   --accent-foreground: 215 12% 12%;
-  --destructive: 355 54% 50%;
+  --destructive: 355 60% 40%;
   --destructive-foreground: 0 0% 100%;
-  --success: 155 52% 36%;
-  --warning: 45 68% 34%;
-  --sev-high: 26 61% 46%;
-  --sev-low: 199 51% 36%;
-  --sev-info: 226 7% 38%;
-  --dim: 218 4% 56%;
+  --success: 155 52% 27%;
+  --warning: 45 68% 26%;
+  --sev-high: 26 65% 32%;
+  --sev-low: 199 55% 30%;
+  --sev-info: 226 7% 32%;
+  --dim: 218 4% 40%;
   --border: 43 11% 87%;
   --border-strong: 41 11% 76%;
-  --input: 42 12% 83%;
-  --ring: 37 47% 37%;
+  --input: 42 8% 54%;
+  --ring: 37 52% 30%;
   --radius: 0.5rem;
 }
 
@@ -85,6 +85,15 @@
     @apply bg-background text-foreground antialiased;
   }
 
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+  }
+
+  :where(p, dd, h1, h2, h3, h4, .font-mono):not(pre) {
+    overflow-wrap: anywhere;
+  }
+
   #root {
     min-height: 100vh;
   }
@@ -93,12 +102,12 @@
 @layer components {
   /* Superfície padrão: contraste de borda, sem blur nem transparência. */
   .glass {
-    @apply rounded-lg border border-border bg-card shadow-glass;
+    @apply min-w-0 rounded-lg border border-border bg-card shadow-glass;
   }
 
   /* Painel de destaque: borda levemente mais marcada, sem tingimento de cor. */
   .glass-elevated {
-    @apply rounded-lg border border-border-strong bg-card shadow-glass;
+    @apply min-w-0 rounded-lg border border-border-strong bg-card shadow-glass;
   }
 
   /* Barra de rolagem discreta. */

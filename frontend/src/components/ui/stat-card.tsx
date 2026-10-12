@@ -4,14 +4,16 @@ import type { ComponentType, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-type Accent = "primary" | "danger" | "warning" | "success" | "accent" | "muted";
+type Accent = "primary" | "danger" | "high" | "low" | "warning" | "success" | "accent" | "muted";
 
 const ACCENTS: Record<Accent, { text: string; chip: string }> = {
   primary: { text: "text-primary", chip: "bg-primary/10 text-primary" },
   danger: { text: "text-destructive", chip: "bg-destructive/10 text-destructive" },
+  high: { text: "text-sev-high", chip: "bg-sev-high/10 text-sev-high" },
+  low: { text: "text-sev-low", chip: "bg-sev-low/10 text-sev-low" },
   warning: { text: "text-warning", chip: "bg-warning/10 text-warning" },
   success: { text: "text-success", chip: "bg-success/10 text-success" },
-  accent: { text: "text-accent", chip: "bg-accent/10 text-accent" },
+  accent: { text: "text-foreground", chip: "bg-secondary text-muted-foreground" },
   muted: { text: "text-foreground", chip: "bg-secondary text-muted-foreground" },
 };
 
@@ -33,25 +35,26 @@ export function StatCard({
   loading?: boolean;
 }) {
   const interactive = Boolean(onClick);
+  const Component = interactive ? "button" : "div";
   const a = ACCENTS[accent];
   return (
-    <button
-      type="button"
+    <Component
+      type={interactive ? "button" : undefined}
       onClick={onClick}
-      disabled={!interactive}
+      aria-busy={loading}
       className={cn(
-        "glass group flex items-center justify-between gap-3 p-4 text-left transition-all duration-200",
+        "glass group flex min-w-0 items-center justify-between gap-3 p-4 text-left transition-colors duration-150",
         interactive &&
-          "cursor-pointer hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-glow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:hover:translate-y-0",
+          "cursor-pointer hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         !interactive && "cursor-default",
       )}
     >
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        <p className="text-xs font-medium text-muted-foreground">
           {label}
         </p>
         {loading ? (
-          <div className="mt-1.5 h-7 w-16 animate-pulse rounded bg-secondary" />
+          <div role="status" className="mt-1.5 h-7 w-16 animate-pulse rounded bg-secondary"><span className="sr-only">Carregando {label}</span></div>
         ) : (
           <p className={cn("mt-1 text-2xl font-bold leading-none tabular-nums", a.text)}>{value}</p>
         )}
@@ -68,6 +71,6 @@ export function StatCard({
           <Icon className="h-5 w-5" />
         </div>
       )}
-    </button>
+    </Component>
   );
 }

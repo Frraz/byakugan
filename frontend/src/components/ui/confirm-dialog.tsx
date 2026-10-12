@@ -50,7 +50,7 @@ export function ConfirmDialog({
   const locked = Boolean(confirmText) && typed.trim() !== confirmText;
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={(next) => !loading && onOpenChange(next)}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

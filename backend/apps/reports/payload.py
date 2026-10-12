@@ -16,7 +16,12 @@ from django.utils import timezone
 from apps.assets.models import Asset
 from apps.knowledge.services import find_article_for_category
 from apps.scans.adapters import get_adapters_for
-from apps.scans.correlation import compute_asset_risk, compute_chains, compute_heatmap, compute_risk
+from apps.scans.correlation import (
+    compute_asset_risk,
+    compute_chains,
+    compute_heatmap,
+    compute_risk,
+)
 from apps.scans.mitre import resolve_mitre
 from apps.scans.models import Evidence, Finding, FindingTriage, Scan
 from apps.scans.owasp_coverage import compute_owasp_coverage
@@ -51,7 +56,12 @@ def build_top_risks(scan: Scan, limit: int = TOP_RISKS_LIMIT) -> list[dict[str, 
     """Ativos priorizados por risk_score (Correlation Engine)."""
     rows = list(
         scan.findings.values(
-            "asset_id", "asset__ip", "asset__hostname", "asset__domain", "severity", "cvss"
+            "asset_id",
+            "asset__ip",
+            "asset__hostname",
+            "asset__domain",
+            "severity",
+            "cvss",
         )
     )
     return compute_asset_risk(rows)[:limit]
@@ -75,6 +85,7 @@ def build_findings_section(scan: Scan) -> list[dict[str, Any]]:
             "cwe": f.cwe,
             "owasp_2021": f.owasp_2021,
             "owasp_2025": f.owasp_2025,
+            "mitre_technique": f.mitre_technique,
             "description": f.description,
             "evidence": f.evidence,
             "recommendation": f.recommendation,
@@ -91,7 +102,9 @@ def build_asset_inventory(scan: Scan) -> list[dict[str, Any]]:
         {
             "asset": _asset_label(asset),
             "os": asset.os,
-            "services": [f"{s.port}/{s.protocol} {s.service_name}" for s in asset.services.all()],
+            "services": [
+                f"{s.port}/{s.protocol} {s.service_name}" for s in asset.services.all()
+            ],
         }
         for asset in assets
     ]
@@ -133,7 +146,9 @@ def build_references(scan: Scan) -> list[dict[str, Any]]:
     """
     seen: set[str] = set()
     refs: list[dict[str, Any]] = []
-    findings = scan.findings.select_related("vulnerability").filter(vulnerability__isnull=False)
+    findings = scan.findings.select_related("vulnerability").filter(
+        vulnerability__isnull=False
+    )
     for finding in findings:
         vuln = finding.vulnerability
         key = vuln.cve or str(vuln.id)
@@ -164,14 +179,18 @@ def build_owasp_coverage(scan: Scan) -> dict[str, Any]:
     dashboard mostrem exatamente a mesma cobertura.
     """
     adapters_run = [a.name for a in get_adapters_for(scan.scan_type, scan.options)]
-    finding_rows = list(scan.findings.values("owasp_2021", "owasp_2025", "severity", "dedup_key"))
+    finding_rows = list(
+        scan.findings.values("owasp_2021", "owasp_2025", "severity", "dedup_key")
+    )
     proven_playbook_keys = set(
-        scan.evidences.filter(status=Evidence.Status.PROVEN).values_list("playbook_key", flat=True)
+        scan.evidences.filter(status=Evidence.Status.PROVEN).values_list(
+            "playbook_key", flat=True
+        )
     )
     excluded_dedup_keys = set(
-        FindingTriage.objects.filter(status__in=FindingTriage.RESOLVED_STATUSES).values_list(
-            "dedup_key", flat=True
-        )
+        FindingTriage.objects.filter(
+            status__in=FindingTriage.RESOLVED_STATUSES
+        ).values_list("dedup_key", flat=True)
     )
     return compute_owasp_coverage(
         finding_rows=finding_rows,
@@ -245,17 +264,24 @@ def build_attack_narrative(scan: Scan) -> list[dict[str, Any]]:
         )
         if technique:
             entry["techniques"].add(technique)
-        if _IMPACT_RANK.get(ev.impact_level, 0) > _IMPACT_RANK.get(entry["max_impact"], 0):
+        if _IMPACT_RANK.get(ev.impact_level, 0) > _IMPACT_RANK.get(
+            entry["max_impact"], 0
+        ):
             entry["max_impact"] = ev.impact_level
 
     excluded_dedup_keys = set(
-        FindingTriage.objects.filter(status__in=FindingTriage.RESOLVED_STATUSES).values_list(
-            "dedup_key", flat=True
-        )
+        FindingTriage.objects.filter(
+            status__in=FindingTriage.RESOLVED_STATUSES
+        ).values_list("dedup_key", flat=True)
     )
     chain_rows = list(
         scan.findings.values(
-            "asset_id", "asset__ip", "asset__hostname", "asset__domain", "playbook_key", "dedup_key"
+            "asset_id",
+            "asset__ip",
+            "asset__hostname",
+            "asset__domain",
+            "playbook_key",
+            "dedup_key",
         )
     )
     chains_by_asset: dict[str, list[dict[str, Any]]] = {}
@@ -320,7 +346,11 @@ def build_executive_narrative(payload: dict[str, Any]) -> str:
         )
 
     destaque = severity["critical"] or severity["high"]
-    faixa = "críticas" if severity["critical"] else "altas" if severity["high"] else "relevantes"
+    faixa = (
+        "críticas"
+        if severity["critical"]
+        else "altas" if severity["high"] else "relevantes"
+    )
     return (
         f"A análise do alvo {payload['target']} identificou {total} finding(s) "
         f"em {summary['assets']} ativo(s), dos quais {destaque} de severidade {faixa} "
@@ -349,7 +379,9 @@ def build_report_payload(scan: Scan, report_type: str) -> dict[str, Any]:
 
     if report_type == Report.ReportType.EXECUTIVE:
         payload["top_risks"] = build_top_risks(scan)
-        payload["heatmap"] = compute_heatmap(list(scan.findings.values("category", "severity")))
+        payload["heatmap"] = compute_heatmap(
+            list(scan.findings.values("category", "severity"))
+        )
         payload["narrative"] = build_executive_narrative(payload)
     else:
         payload["scan"] = build_scan_metadata(scan)

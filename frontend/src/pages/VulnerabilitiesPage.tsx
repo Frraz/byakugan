@@ -1,3 +1,4 @@
+import { useUrlState } from "@/hooks/useUrlState";
 /** Vulnerabilities — vulnerabilidades consolidadas + catálogo de CVEs (RF008). */
 
 import { useMemo, useState } from "react";
@@ -22,18 +23,18 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { errorMessage } from "@/lib/errors";
 import type { GroupedFinding, Severity } from "@/lib/types";
 
-const SEVERITY_ACCENT: Record<Severity, "danger" | "warning" | "primary" | "muted"> = {
+const SEVERITY_ACCENT: Record<Severity, "danger" | "high" | "warning" | "low" | "muted"> = {
   critical: "danger",
-  high: "danger",
+  high: "high",
   medium: "warning",
-  low: "primary",
+  low: "low",
   info: "muted",
 };
 
 function FindingsTab() {
-  const [search, setSearch] = useState("");
-  const [severity, setSeverity] = useState<Severity | "all">("all");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useUrlState<string>("search", "");
+  const [severity, setSeverity] = useUrlState<Severity | "all">("severity", "all");
+  const [page, setPage] = useUrlState<number>("page", 1);
   const debounced = useDebounce(search);
   const [selected, setSelected] = useState<GroupedFinding | null>(null);
 
@@ -48,7 +49,7 @@ function FindingsTab() {
     }),
     [debounced, severity, page],
   );
-  const { data, isLoading, isError, error } = useGroupedFindings(params);
+  const { data, isLoading, isError, error, refetch } = useGroupedFindings(params);
   const results = data?.results ?? [];
 
   return (
@@ -79,6 +80,7 @@ function FindingsTab() {
               setSearch(e.target.value);
               setPage(1);
             }}
+            aria-label="Buscar por título, categoria ou CVE"
             placeholder="Buscar por título, categoria ou CVE…"
             className="pl-9"
           />
@@ -119,7 +121,7 @@ function FindingsTab() {
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
       ) : isLoading ? (
         <TableSkeleton columns={6} />
       ) : results.length === 0 ? (
@@ -186,15 +188,15 @@ function FindingsTab() {
 }
 
 function CatalogTab() {
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useUrlState<string>("search", "");
+  const [page, setPage] = useUrlState<number>("page", 1);
   const debounced = useDebounce(search);
 
   const params = useMemo(
     () => ({ search: debounced || undefined, page }),
     [debounced, page],
   );
-  const { data, isLoading, isError, error } = useVulnerabilities(params);
+  const { data, isLoading, isError, error, refetch } = useVulnerabilities(params);
   const results = data?.results ?? [];
 
   return (
@@ -207,13 +209,14 @@ function CatalogTab() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          placeholder="Buscar por CVE ou título…"
+          aria-label="Buscar por CVE ou título"
+            placeholder="Buscar por CVE ou título…"
           className="pl-9"
         />
       </div>
 
       {isError ? (
-        <ErrorBanner message={errorMessage(error)} />
+        <ErrorBanner message={errorMessage(error)} onRetry={() => void refetch()} />
       ) : isLoading ? (
         <TableSkeleton columns={4} />
       ) : results.length === 0 ? (

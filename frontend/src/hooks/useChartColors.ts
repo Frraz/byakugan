@@ -7,6 +7,7 @@ import { useThemeStore } from "@/store/theme";
 const TOKENS = [
   "destructive",
   "sev-high",
+  "sev-low",
   "warning",
   "primary",
   "sev-info",

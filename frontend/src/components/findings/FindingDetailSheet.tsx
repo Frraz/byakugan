@@ -147,7 +147,7 @@ function TriageControls({ finding }: { finding: Finding }) {
   return (
     <div className="space-y-2 rounded-xl border border-border bg-popover/50 p-3">
       <Select value={status} onValueChange={(v) => setStatus(v as TriageStatus)}>
-        <SelectTrigger>
+        <SelectTrigger aria-label="Estado de triagem" disabled={triage.isPending}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -159,6 +159,8 @@ function TriageControls({ finding }: { finding: Finding }) {
         </SelectContent>
       </Select>
       <Textarea
+        aria-label="Nota de triagem"
+        disabled={triage.isPending}
         value={note}
         onChange={(e) => setNote(e.target.value)}
         placeholder="Nota (opcional) — motivo da triagem"

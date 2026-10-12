@@ -14,10 +14,10 @@ export function ScanProgress({
   return (
     <div className={className}>
       <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span className="truncate">{phase || "Iniciando…"}</span>
+        <span className="min-w-0 break-all">{phase || "Iniciando…"}</span>
         <span className="shrink-0 tabular-nums">{progress}%</span>
       </div>
-      <Progress value={progress} />
+      <Progress value={progress} aria-label={`Progresso do scan: ${phase || "Iniciando"}`} />
     </div>
   );
 }

@@ -9,7 +9,7 @@ const CELL_BG: Record<Severity, string> = {
   critical: "bg-destructive",
   high: "bg-sev-high",
   medium: "bg-warning",
-  low: "bg-primary",
+  low: "bg-sev-low",
   info: "bg-sev-info",
 };
 
@@ -62,16 +62,18 @@ export function CategoryHeatmap({ cells }: { cells: HeatmapCell[] }) {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div
+                          tabIndex={0}
+                          aria-label={`${labels.get(category) ?? category}, ${SEVERITY_LABELS[sev]}: ${count}`}
                           className={cn(
                             "relative flex h-10 items-center justify-center overflow-hidden rounded-md font-mono text-sm",
-                            count > 0 ? "text-foreground" : "bg-secondary/40 text-muted-foreground/40",
+                            count > 0 ? "text-foreground" : "bg-secondary text-muted-foreground",
                           )}
                         >
                           {count > 0 && (
                             <span
                               aria-hidden
                               className={cn("absolute inset-0 rounded-md", CELL_BG[sev])}
-                              style={{ opacity: intensity(count, max) }}
+                              style={{ opacity: intensity(count, max) * 0.18 }}
                             />
                           )}
                           <span className="relative z-10">{count || "–"}</span>

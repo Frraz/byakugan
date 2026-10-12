@@ -1,6 +1,10 @@
 /** Diálogo de criação/edição de Target (RF004). Sistema privado: só nome + valor. */
 
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { targetFormSchema, type TargetFormValues } from "@/lib/forms";
+import { FieldError } from "@/components/ui/field-error";
 import { Info } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,7 +29,7 @@ import { useCreateTarget, useUpdateTarget, type TargetInput } from "@/hooks/useD
 import { errorMessage, fieldErrors } from "@/lib/errors";
 import type { Target } from "@/lib/types";
 
-const EMPTY: TargetInput = {
+const EMPTY: TargetFormValues = {
   name: "",
   value: "",
   authorization_scope: "",
@@ -80,31 +84,26 @@ export function TargetFormDialog({
   const isEdit = Boolean(target);
   const create = useCreateTarget();
   const update = useUpdateTarget();
-  const [form, setForm] = useState<TargetInput>(EMPTY);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const { register, reset, handleSubmit, setError, formState: { errors } } = useForm<TargetFormValues>({ resolver: zodResolver(targetFormSchema), defaultValues: EMPTY });
 
   useEffect(() => {
     if (!open) return;
-    setErrors({});
-    setForm(
+    reset(
       target
         ? {
             name: target.name,
             value: target.value,
-            authorization_scope: target.authorization_scope,
+            authorization_scope: target.authorization_scope ?? "",
             authorization_expires_at: toLocalInput(target.authorization_expires_at),
             is_active: target.is_active,
           }
         : EMPTY,
     );
-  }, [open, target]);
+  }, [open, target, reset]);
 
-  const set = (k: keyof TargetInput) => (value: string | boolean) =>
-    setForm((f) => ({ ...f, [k]: value }));
-
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    setErrors({});
+  const pending = create.isPending || update.isPending;
+  const onSubmit = (form: TargetFormValues) => {
+    if (pending) return;
     const payload: TargetInput = {
       name: form.name,
       value: form.value,
@@ -119,7 +118,11 @@ export function TargetFormDialog({
     }
 
     const onError = (err: unknown) => {
-      setErrors(fieldErrors(err));
+      const fields = fieldErrors(err);
+      for (const [field, message] of Object.entries(fields)) {
+        if (field in EMPTY) setError(field as keyof TargetFormValues, { message });
+      }
+      setError("root", { message: errorMessage(err) });
       toast.error(errorMessage(err));
     };
     const onSuccess = () => {
@@ -131,11 +134,10 @@ export function TargetFormDialog({
     else create.mutate(payload, { onSuccess, onError });
   };
 
-  const pending = create.isPending || update.isPending;
-  const generalError = errors.detail || errors.non_field_errors;
+  const generalError = errors.root?.message;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar alvo" : "Novo alvo"}</DialogTitle>
@@ -145,17 +147,19 @@ export function TargetFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="t-name">Nome</Label>
             <Input
               id="t-name"
               required
-              value={form.name}
-              onChange={(e) => set("name")(e.target.value)}
+              {...register("name")}
+              disabled={pending}
+              aria-invalid={Boolean(errors.name)}
+              aria-describedby="t-name-error"
               placeholder="DMZ empresa X"
             />
-            {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+            <FieldError id="t-name-error" message={errors.name?.message} />
           </div>
 
           <div className="space-y-1.5">
@@ -164,11 +168,13 @@ export function TargetFormDialog({
               id="t-value"
               required
               className="font-mono"
-              value={form.value}
-              onChange={(e) => set("value")(e.target.value)}
+              {...register("value")}
+              disabled={pending}
+              aria-invalid={Boolean(errors.value)}
+              aria-describedby="t-value-error"
               placeholder="byakugan.com.br, 10.0.0.0/24 ou 2001:db8::1"
             />
-            {errors.value && <p className="text-xs text-destructive">{errors.value}</p>}
+            <FieldError id="t-value-error" message={errors.value?.message} />
           </div>
 
           <div className="space-y-1.5">
@@ -179,13 +185,13 @@ export function TargetFormDialog({
             <Input
               id="t-scope"
               className="font-mono"
-              value={form.authorization_scope ?? ""}
-              onChange={(e) => set("authorization_scope")(e.target.value)}
+              {...register("authorization_scope")}
+              disabled={pending}
+              aria-invalid={Boolean(errors.authorization_scope)}
+              aria-describedby="t-authorization_scope-error"
               placeholder="Vazio = usa o próprio alvo"
             />
-            {errors.authorization_scope && (
-              <p className="text-xs text-destructive">{errors.authorization_scope}</p>
-            )}
+            <FieldError id="t-authorization_scope-error" message={errors.authorization_scope?.message} />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -194,17 +200,20 @@ export function TargetFormDialog({
               <Input
                 id="t-expires"
                 type="datetime-local"
-                value={form.authorization_expires_at ?? ""}
-                onChange={(e) => set("authorization_expires_at")(e.target.value)}
+                {...register("authorization_expires_at")}
+                disabled={pending}
+                aria-invalid={Boolean(errors.authorization_expires_at)}
+                aria-describedby="t-authorization_expires_at-error"
               />
+              <FieldError id="t-authorization_expires_at-error" message={errors.authorization_expires_at?.message} />
             </div>
             {isEdit && (
               <div className="flex items-end gap-2 pb-2">
                 <input
                   id="t-active"
                   type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) => set("is_active")(e.target.checked)}
+                  {...register("is_active")}
+                  disabled={pending}
                   className="h-4 w-4 rounded border-input accent-primary"
                 />
                 <Label htmlFor="t-active" className="cursor-pointer">
@@ -217,7 +226,7 @@ export function TargetFormDialog({
           {generalError && <ErrorBanner message={generalError} />}
 
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={pending}>

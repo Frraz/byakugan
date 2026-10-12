@@ -1,7 +1,12 @@
 /** Tela de login — identidade da marca, dark command-center. */
 
-import { type FormEvent, useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { loginSchema } from "@/lib/forms";
+import { FieldError } from "@/components/ui/field-error";
+import { Eye, EyeOff } from "lucide-react";
 
 import { Mark } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
@@ -18,8 +23,11 @@ export function LoginPage() {
   const access = useAuthStore((s) => s.access);
   const navigate = useNavigate();
   const login = useLogin();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const { register, handleSubmit, resetField, formState: { errors } } = useForm<{ email: string; password: string }>({ resolver: zodResolver(loginSchema), defaultValues: { email: "", password: "" } });
+  const [showPassword, setShowPassword] = useState(false);
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+  const destination = from?.startsWith("/") && !from.startsWith("//") && !from.includes("\\") && !from.startsWith("/login") ? from : "/";
   // Capturado uma única vez: se o usuário chegou aqui por refresh falho (não
   // por logout manual), mostramos o aviso e limpamos a flag para não repetir
   // em um próximo acesso à página.
@@ -28,11 +36,11 @@ export function LoginPage() {
     if (useAuthStore.getState().sessionExpired) useAuthStore.getState().setSessionExpired(false);
   }, []);
 
-  if (access) return <Navigate to="/" replace />;
+  if (access) return <Navigate to={destination} replace />;
 
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    login.mutate({ email, password }, { onSuccess: () => navigate("/") });
+  const onSubmit = ({ email, password }: { email: string; password: string }) => {
+    if (login.isPending) return;
+    login.mutate({ email: email.trim(), password }, { onSuccess: () => { resetField("password"); navigate(destination, { replace: true }); } });
   };
 
   return (
@@ -55,7 +63,7 @@ export function LoginPage() {
           />
         )}
 
-        <form onSubmit={onSubmit} className="glass space-y-4 p-6">
+        <form noValidate onSubmit={handleSubmit(onSubmit)} className="glass space-y-4 p-6">
           <div className="space-y-1.5">
             <Label htmlFor="login-email">Email</Label>
             <Input
@@ -64,24 +72,33 @@ export function LoginPage() {
               autoComplete="username"
               required
               autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              {...register("email")}
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby="login-email-error"
+              disabled={login.isPending}
               placeholder="analyst@empresa.com"
             />
           </div>
+          <FieldError id="login-email-error" message={errors.email?.message} />
           <div className="space-y-1.5">
             <Label htmlFor="login-password">Senha</Label>
             <Input
               id="login-password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               autoComplete="current-password"
               required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              {...register("password")}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby="login-password-error"
+              disabled={login.isPending}
               placeholder="••••••••••"
             />
+            <Button type="button" variant="ghost" size="sm" aria-controls="login-password" aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>
+              {showPassword ? <EyeOff /> : <Eye />} {showPassword ? "Ocultar senha" : "Mostrar senha"}
+            </Button>
           </div>
 
+          <FieldError id="login-password-error" message={errors.password?.message} />
           {login.isError && <ErrorBanner message={errorMessage(login.error)} />}
 
           <Button type="submit" className="w-full" disabled={login.isPending}>

@@ -6,7 +6,7 @@ const LEVEL_COLOR: Record<Severity, string> = {
   critical: "hsl(var(--destructive))",
   high: "hsl(var(--sev-high))",
   medium: "hsl(var(--warning))",
-  low: "hsl(var(--primary))",
+  low: "hsl(var(--sev-low))",
   info: "hsl(var(--sev-info))",
 };
 
