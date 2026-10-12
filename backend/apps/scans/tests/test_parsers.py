@@ -49,6 +49,90 @@ def test_persist_is_idempotent():
     assert Service.objects.filter(port=22).count() == 1
 
 
+@pytest.mark.parametrize(
+    "identity",
+    [{"ip": "192.168.0.10"}, {"hostname": "empresa.com"}, {"domain": "empresa.com"}],
+)
+def test_persistence_reuses_oldest_asset_with_four_matches(identity):
+    """Inventário e findings devem resolver a mesma identidade ambígua."""
+    existing = Asset.objects.create(**identity)
+    for _ in range(3):
+        Asset.objects.create(**identity)
+    scan = ScanFactory()
+    service = RawResult(kind="service", data={**identity, "port": 443, "service_name": "https"})
+    finding = RawResult(
+        kind="vulnerability",
+        data={
+            **identity,
+            "title": "Certificado expirado",
+            "severity": "high",
+            "description": "Certificado fora da validade.",
+            "evidence": "notAfter=2020-01-01",
+            "recommendation": "Renovar o certificado.",
+        },
+    )
+
+    for _ in range(2):
+        persist_results([service])
+        persist_findings(scan, [finding])
+
+    assert Asset.objects.count() == 4
+    assert Service.objects.get().asset_id == existing.id
+    assert set(Finding.objects.values_list("asset_id", flat=True)) == {existing.id}
+    assert Finding.objects.values("dedup_key").distinct().count() == 1
+
+
+def test_hostname_with_multiple_dns_addresses_reuses_same_asset():
+    existing = Asset.objects.create(ip="192.168.0.10", hostname="empresa.com")
+    Asset.objects.create(ip="192.168.0.11", hostname="empresa.com")
+
+    persist_results(
+        [
+            RawResult(
+                kind="service",
+                data={"hostname": "empresa.com", "port": 443, "service_name": "https"},
+            )
+        ]
+    )
+
+    assert Asset.objects.count() == 2
+    assert Service.objects.get().asset_id == existing.id
+    existing.refresh_from_db()
+    assert existing.ip == "192.168.0.10"
+
+
+@pytest.mark.parametrize("domain_exists", [False, True])
+def test_dns_records_do_not_attach_to_subdomain_assets(domain_exists):
+    children = [
+        Asset.objects.create(
+            ip=f"192.168.0.{i}", hostname=f"host{i}.empresa.com", domain="empresa.com"
+        )
+        for i in range(1, 5)
+    ]
+    existing = Asset.objects.create(domain="empresa.com") if domain_exists else None
+    raw = RawResult(
+        kind="dns_record",
+        data={"domain": "empresa.com", "record_type": "TXT", "value": "v=spf1 -all"},
+    )
+
+    persist_results([raw])
+    persist_results([raw])
+
+    record = DnsRecord.objects.get()
+    assert record.asset_id not in {child.id for child in children}
+    assert record.asset.domain == "empresa.com"
+    assert Asset.objects.count() == 5
+    if existing:
+        assert record.asset_id == existing.id
+
+
+def test_persistence_rejects_unidentified_asset():
+    Asset.objects.create(ip="192.168.0.10")
+    with pytest.raises(ValueError, match="sem IP, hostname ou domínio"):
+        persist_results([RawResult(kind="host", data={})])
+    assert Asset.objects.count() == 1
+
+
 def _tech(category, name, **extra):
     return RawResult(
         kind="technology",

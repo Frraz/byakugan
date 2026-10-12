@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+from django.db.models import Q
+
 from apps.assets.models import Asset, DnsRecord, Service, Technology
 
 from .adapters import RawResult
@@ -50,7 +52,13 @@ class PersistenceSummary:
 
 
 def _get_or_create_asset(*, ip: str | None, hostname: str | None, domain: str | None) -> Asset:
-    """Localiza ou cria um ativo pela chave natural (IP → hostname → domínio)."""
+    """Resolve IP → hostname → domínio, tolerando múltiplas correspondências.
+
+    DNS pode produzir vários IPs para um hostname e vários hosts para um
+    domínio. Esses campos não são únicos no inventário. Reutiliza o registro
+    mais antigo (com desempate por PK) para manter estável o vínculo dos
+    findings e suas chaves de triagem, inclusive com duplicatas preexistentes.
+    """
     lookup: dict[str, str] = {}
     if ip:
         lookup = {"ip": ip}
@@ -58,11 +66,19 @@ def _get_or_create_asset(*, ip: str | None, hostname: str | None, domain: str | 
         lookup = {"hostname": hostname}
     elif domain:
         lookup = {"domain": domain}
+    else:
+        raise ValueError("Resultado de scan sem IP, hostname ou domínio para identificar o ativo.")
 
-    defaults = {"hostname": hostname, "domain": domain}
-    if ip:
-        defaults["ip"] = ip
-    asset, _ = Asset.objects.get_or_create(**lookup, defaults=defaults)
+    candidates = Asset.objects.filter(**lookup)
+    if not ip and not hostname:
+        # O domínio também aparece nos assets dos subdomínios. Registros DNS
+        # da zona devem ficar no próprio domínio, nunca num host filho.
+        candidates = candidates.filter(
+            Q(hostname=domain) | Q(hostname__isnull=True) | Q(hostname="")
+        )
+    asset = candidates.order_by("created_at", "id").first()
+    if asset is None:
+        asset = Asset.objects.create(ip=ip, hostname=hostname, domain=domain)
 
     # Complementa campos vazios sem sobrescrever dados já conhecidos.
     updated_fields = []

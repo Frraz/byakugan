@@ -83,6 +83,42 @@ def test_run_scan_counts_dns_records(settings, monkeypatch):
     assert result["dns_records"] == 1
 
 
+def test_run_scan_completes_for_domain_with_four_addresses(settings, monkeypatch):
+    """A/AAAA seguidos de MX reproduziam MultipleObjectsReturned no parser."""
+    settings.BYAKUGAN_SCANNING_ENABLED = True
+
+    class _MultiAddressDnsAdapter(ScannerAdapter):
+        name = "fake-multi-address-dns"
+        scan_type = "discovery"
+
+        def run(self, target, context):
+            return [
+                *[
+                    RawResult(
+                        kind="host",
+                        data={"ip": f"192.168.0.{i}", "hostname": target, "domain": target},
+                    )
+                    for i in range(1, 5)
+                ],
+                RawResult(
+                    kind="dns_record",
+                    data={"domain": target, "record_type": "MX", "value": "10 mail.example.com."},
+                ),
+            ]
+
+    monkeypatch.setattr(tasks_mod, "get_adapters_for", _adapters_for(_MultiAddressDnsAdapter()))
+    scan = ScanFactory(target="example.com", authorization_scope="example.com")
+
+    result = tasks_mod.run_scan(str(scan.id))
+
+    scan.refresh_from_db()
+    assert scan.status == Scan.Status.COMPLETED
+    assert result["dns_records"] == 1
+    assert Asset.objects.count() == 4
+    asset = Asset.objects.order_by("created_at", "id").first()
+    assert asset.dns_records.get().record_type == "MX"
+
+
 def test_run_scan_reaches_full_progress(settings, monkeypatch):
     settings.BYAKUGAN_SCANNING_ENABLED = True
     monkeypatch.setattr(tasks_mod, "get_adapters_for", _adapters_for(_FakeAdapter()))
