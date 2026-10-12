@@ -3,7 +3,7 @@
 **Versão:** 1.0  
 **Objetivo:** redefinir a experiência visual e funcional do Byakugan, da autenticação aos relatórios PDF, preservando a lógica de negócio e os controles de segurança existentes.
 
-**Retomada (11/10/2026):** ver [estado do redesign](docs/redesign-status.md). A referência “Fase E (QA)” no código corresponde, pelo conteúdo, à Fase 6 deste plano; o aceite final permanece em andamento.
+**Retomada (11/10/2026):** ver [estado do redesign](docs/redesign-status.md). A referência “Fase E (QA)” no código corresponde, pelo conteúdo, à Fase 6 deste plano; as fases foram revisadas e entregues, com evidências e limites registrados no documento de estado.
 
 ---
 

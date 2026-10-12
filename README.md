@@ -91,20 +91,23 @@ Ver [`docs/roadmap.md`](docs/roadmap.md) e [`docs/tasks.md`](docs/tasks.md) para
 - **Reporting** — relatórios executivo (risco + top riscos + heatmap) e técnico (inventário + findings completos + **Narrativa de Ataque**: passos comprovados por ativo, em ordem de impacto, com MITRE ATT&CK + cadeias de risco — presente só quando há exploração comprovada) em PDF profissional (`reportlab`: capa com identidade, gráficos de severidade/categoria, numeração de páginas, sumário narrativo e seção de referências CVE/NVD), CSV e JSON, gerados só a partir de scans concluídos (RN012); download autenticado e auditado (RN011); histórico imutável (RN003).
 - **Knowledge Base** — artigos por categoria (descrição, impacto, passo a passo de remediação, referências), correlacionados a findings por `category` sem FK, com fallback genérico; seed inicial com 6 artigos reais; único conteúdo do domínio editável (CRUD completo, não é histórico imutável); integrado ao relatório técnico.
 - **Gestão de alvos e scans** — alvos podem ser **editados e excluídos** (a exclusão preserva o histórico de scans, que apenas perdem o vínculo); scans concluídos podem ser **excluídos em cascata por admin** (removendo findings e relatórios associados, incluindo os arquivos — RN014), com bloqueio para scans em execução (409) e trilha de auditoria.
-- **Frontend completo** — construído sobre **shadcn/ui** na identidade visual oficial (ver abaixo). Navegação: **Dashboard · Alvos · Scans · Vulnerabilidades · Evidências · Relatórios**. Inclui: login, dashboard SOC (KPIs, donut de severidade, heatmap, ativos priorizados); **Novo alvo** enxuto (nome + valor — host/domínio/IPv4/IPv6/CIDR — com ícone de ajuda sobre o escopo); **Novo scan** guiado (cards de tipo/intensidade, toggle de exploração, ajustes finos e resumo); **Vulnerabilidades consolidadas** (uma linha por vulnerabilidade lógica entre alvos, com painel que separa *como foi detectada* / *como explorar* / *onde foi encontrada* + triagem); **Evidências** (prova de exploração com todos os status + playbooks curados); Reports (geração + **pré-visualização in-app** + download) — tudo com busca, filtros, paginação, confirmações destrutivas, toasts e navegação responsiva. O inventário de ativos e os passos de remediação (Knowledge Base) aparecem por *drill-down*/inline no detalhe da vulnerabilidade, sem aba dedicada.
+- **Frontend completo** — construído sobre **shadcn/ui** na identidade visual oficial (ver abaixo). Navegação: **Dashboard · Alvos · Ativos · Scans · Vulnerabilidades · Evidências · Relatórios · Base de conhecimento**. Inclui: login, dashboard SOC (KPIs, donut de severidade, heatmap, ativos priorizados); **Novo alvo** enxuto (nome + valor — host/domínio/IPv4/IPv6/CIDR — com ícone de ajuda sobre o escopo); **Novo scan** guiado (cards de tipo/intensidade, toggle de exploração, ajustes finos e resumo); **Vulnerabilidades consolidadas** (uma linha por vulnerabilidade lógica entre alvos, com painel que separa *como foi detectada* / *como explorar* / *onde foi encontrada* + triagem); **Evidências** (prova de exploração com todos os status + playbooks curados); Reports (geração + **pré-visualização in-app** + download) — tudo com busca, filtros, paginação, confirmações destrutivas, toasts e navegação responsiva. O inventário e a base de conhecimento têm navegação própria, além dos detalhes por *drill-down*. Minha conta e cadastro de usuários (admin) usam os contratos existentes.
 
 ## Identidade visual
 
-A identidade da marca está em [`docs/ui.md`](docs/ui.md) e nos assets `Byakugan logo.png` / `Byakugan identidade visual.png` (raiz). Estética **dark-first**, glassmorphism e neon glow, no espírito de plataformas de cyber intelligence.
+A identidade **Forensic Instrument** está em [`docs/ui.md`](docs/ui.md):
+superfícies neutras, acento em latão mineral, marca vetorial e cores semânticas.
 
-| Uso | Cor | Hex |
-| --- | --- | --- |
-| Fundo (Cyber Navy) | ▉ | `#0B1220` |
-| Primária (Electric Blue) | ▉ | `#00D4FF` |
-| Acento (Byakugan Lavender) | ▉ | `#C8B6FF` |
-| Sucesso / Atenção / Crítico | ▉ ▉ ▉ | `#22C55E` / `#F59E0B` / `#EF4444` |
+| Uso | Tema escuro |
+| --- | --- |
+| Fundo | `#0B0D10` |
+| Superfície | `#13171C` |
+| Texto principal | `#F0F1EE` |
+| Acento de marca | `#D4AE73` |
+| Crítica / Alta / Média | `#F06B73` / `#F29A63` / `#E3C66F` |
+| Baixa / Informativa | `#80B7D4` / `#A7B0BC` |
 
-A UI é construída sobre **shadcn/ui** (primitivos Radix) com tokens de cor em CSS variables HSL (tema claro em `:root`, Cyber Navy em `.dark` — o padrão); ícones **lucide-react**, toasts **sonner** e gráficos **recharts**. Detalhes do design system em [`docs/ui.md`](docs/ui.md). O logo é renderizado a partir da arte raster em [`frontend/src/components/brand/Logo.tsx`](frontend/src/components/brand/Logo.tsx).
+A UI é construída sobre **shadcn/ui** (primitivos Radix) com tokens de cor em CSS variables HSL (tema claro em `:root`, Forensic Instrument em `.dark` — o padrão); ícones **lucide-react**, toasts **sonner** e gráficos **recharts**. Detalhes do design system em [`docs/ui.md`](docs/ui.md) e validação do redesign em [`docs/redesign-status.md`](docs/redesign-status.md). O logo é vetorial, renderizado em [`frontend/src/components/brand/Logo.tsx`](frontend/src/components/brand/Logo.tsx).
 
 ## Stack
 

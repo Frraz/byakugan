@@ -40,4 +40,4 @@
 | `analyst` | Criar/cancelar scans, consultar resultados, gerar relatórios. |
 | `viewer` | Somente leitura (assets, scans, findings, reports). |
 
-> **Deployment privado (frontend):** por ser um sistema de uso próprio, o frontend concede as ações de escrita a **qualquer usuário autenticado** (`usePermissions`) — evitando que botões primários "sumam" quando o papel não resolve. O **backend continua sendo a fonte real de permissão** (as *permission classes* do DRF acima permanecem inalteradas).
+> **Frontend:** `usePermissions` espelha os papéis da API: `admin` e `analyst` podem escrever; somente `admin` vê administração e exclusões. `viewer` consulta resultados. A API revalida cada operação, inclusive acessos por URL direta. O preenchimento automático de autorização no deployment privado não altera RBAC.

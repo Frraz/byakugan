@@ -146,7 +146,7 @@ docs(api): document reports endpoints
 
 ## 9. Prioridade de desenvolvimento
 
-1. Fundação (monorepo, Docker, health check) ← **fase atual**
+1. Fundação (monorepo, Docker, health check)
 2. Autenticação (JWT + RBAC) + auditoria
 3. Asset Discovery
 4. Fingerprinting
@@ -156,7 +156,7 @@ docs(api): document reports endpoints
 8. Dashboard
 9. IA Assistente
 
-Ver `docs/roadmap.md` para o detalhamento das fases.
+Ver `docs/roadmap.md` para o detalhamento das fases e `docs/tasks.md` para o progresso atual. O aceite do redesign está em `docs/redesign-status.md`; a lista acima indica a ordem arquitetural, não a fase atual.
 
 ---
 

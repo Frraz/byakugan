@@ -101,22 +101,23 @@
 
 ## Overhaul de UX/UI (deployment privado)
 - [x] Autorização opcional: "Autorizado por" removido da UI; `authorized_by`/`authorization_scope` `blank` + auto-preenchidos (migration `0010`) — RN007 mantida (fail-closed)
-- [x] RBAC do frontend relaxado (qualquer autenticado escreve) — corrige botões primários que "sumiam"; backend inalterado
+- [x] RBAC do frontend alinhado à API: admin/analyst escrevem; viewer somente leitura; administração/exclusões somente admin.
 - [x] Novo alvo enxuto (nome + valor; aceita domínio/IPv4/IPv6/CIDR) com ícone (i) explicando o escopo
 - [x] Novo scan profissional (cards de tipo/intensidade, toggle de exploração, ajustes finos, resumo)
 - [x] Vulnerabilidades consolidadas entre alvos (`GET /findings/grouped/` — RN025) + `VulnerabilityGroupSheet` (como detectada / como explorar / onde encontrada)
 - [x] Aba Evidências mostra todos os status (proven/attempted/blocked/failed) com filtro; feedback do "Explorar" via `Scan.exploitable_findings_count`
-- [x] Abas Assets e Knowledge Base removidas da navegação (dados mantidos inline/drill-down)
+- [x] Inventário de ativos e base de conhecimento disponíveis na navegação; detalhes também acessíveis por drill-down.
 
 ### Backlog de UI/UX (evolução futura)
-- [~] Acabamento e QA do redesign (Fase 6 do plano / referência “Fase E” nos tokens) — ver [ponto de retomada](redesign-status.md)
+- [x] Acabamento e QA do redesign (fases 0–6; referência antiga “Fase E”) — resultados e limites em [estado do redesign](redesign-status.md).
 - [x] Aba Evidências no frontend (prova de exploração + playbook curado por finding)
 - [x] Painel/visualização da matriz de cobertura OWASP (2021 × 2025) no detalhe do scan (`OwaspCoverageMatrix`)
-- [ ] Formulários com react-hook-form + zod (validação client-side rica)
-- [ ] Busca global (cmd-k) na topbar
+- [x] Validação local rica: react-hook-form/zod em login, alvos, artigos e usuários; formato de alvo via zod em scans, seleções e submissão protegidas em relatórios.
+- [x] Busca/navegação Ctrl/Cmd K na topbar: alvos, scans e artigos via API; escopo de busca explicitado.
 - [ ] Geração de relatórios assíncrona (Celery) para scans com muitos findings
 - [x] Tela de Audit Logs (`AuditLogPage`, rota `/audit-log`)
-- [ ] Telas de perfil (`/me`) e gestão de usuários
+- [x] Minha conta (`/account`, GET `/auth/me/`) e cadastro admin (`/users/new`, POST `/auth/register/`).
+- [ ] Gestão completa de usuários (listagem/edição/desativação): depende de novos endpoints; evolução funcional fora do redesign.
 
 ## V2
 - [ ] OpenSearch (busca/agregação de findings)

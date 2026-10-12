@@ -31,6 +31,7 @@ def main() -> None:
             }
         }
         settings.MEDIA_ROOT = root / "media"
+        settings.SECRET_KEY = secrets.token_urlsafe(48)
         settings.BYAKUGAN_SCANNING_ENABLED = False
         settings.BYAKUGAN_EXPLOITATION_ENABLED = False
         settings.CELERY_TASK_ALWAYS_EAGER = True

@@ -13,7 +13,7 @@ import { errorMessage } from "@/lib/errors";
 import type { Paginated, Target, Scan, KnowledgeArticle } from "@/lib/types";
 
 const destinations = [
-  ["Dashboard", "/"], ["Alvos", "/targets"], ["Scans", "/scans"],
+  ["Dashboard", "/"], ["Alvos", "/targets"], ["Ativos", "/assets"], ["Scans", "/scans"],
   ["Vulnerabilidades", "/vulnerabilities"], ["Evidências", "/evidence"],
   ["Relatórios", "/reports"], ["Base de conhecimento", "/knowledge-base"], ["Minha conta", "/account"],
 ];

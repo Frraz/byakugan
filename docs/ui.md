@@ -51,7 +51,7 @@ O acento de marca é usado com parcimônia (ação primária, item de navegaçã
 | Info | `sev-info` | `#A7B0BC` |
 | Sucesso | `success` | `#75C6A3` |
 
-`sev-low` é um token dedicado — nunca reaproveita `primary`/`brand`, mesmo sendo também uma tonalidade azulada (severidade e marca são semânticas distintas).
+`sev-low` é um token dedicado — nunca reaproveita `primary`/`brand`, severidade e marca são semânticas distintas.
 
 Tema claro (`:root`) usa tokens equivalentes com valores escurecidos para contraste AA em fundo branco (ver `frontend/src/index.css`); suportado via `darkMode: ["class"]`, mas o dark é o padrão real da aplicação.
 
@@ -66,14 +66,14 @@ Tema claro (`:root`) usa tokens equivalentes com valores escurecidos para contra
 - Variações: horizontal (símbolo + wordmark, `Logo`), símbolo puro (`Mark` — favicon, topbar mobile, cabeçalho de PDF).
 
 ## Layout
-- **Sidebar fixa** à esquerda, dois grupos:
-  - Operação: Dashboard · Alvos · Scans · Vulnerabilidades · Evidências · Relatórios · Base de conhecimento.
-  - Administração (visível por papel): Auditoria.
+- **Sidebar sticky e compactável** à esquerda, dois grupos:
+  - Operação: Dashboard · Alvos · Ativos · Scans · Vulnerabilidades · Evidências · Relatórios · Base de conhecimento.
+  - Administração (somente admin): Auditoria · Cadastrar usuário. Minha conta está disponível para todos os papéis.
   - Item ativo: fundo sutil (`bg-primary/10`) + marcador de borda esquerda em `primary`.
-  - **Assets** não tem aba própria — o inventário do ativo é acessível por *drill-down* a partir do detalhe da vulnerabilidade (`/assets/:id`).
+  - **Ativos**: inventário navegável em `/assets`, com busca/paginação e detalhe em `/assets/:id`. Registros históricos não confirmam disponibilidade atual.
 - **Topbar** com busca/tema, usuário, papel (RBAC) e logout.
 - Área de conteúdo: **KPI tiles** no topo quando aplicável, tabelas com filtros abaixo.
-- **Ações primárias sempre visíveis** ("Novo alvo", "Novo scan"): no deployment privado o frontend concede escrita a qualquer usuário autenticado (`usePermissions`), então os botões não "somem"; o backend segue como fonte real de permissão. O mesmo vale para `isAdmin` (ex.: item "Auditoria" na navegação) — a página correspondente trata um eventual 403 do backend como estado de acesso negado, não como erro genérico.
+- **Permissões:** `admin`/`analyst` veem criação/triagem; exclusões, auditoria e cadastro de usuários são exclusivos de `admin`. `viewer` possui apenas leitura. A API continua sendo a autoridade para cada operação.
 
 ## Componentes base
 Button (default/outline/secondary/ghost/destructive/link) · Input · Select · Textarea · Card/GlassPanel · Dialog/Sheet/AlertDialog (ConfirmDialog) · Table (paginação/ordenação) · Badge (severidade/status/categoria, com texto + cor, nunca só cor) · StatCard (KPI) · CopyButton (blocos de evidência/código) · Toast (sonner) · Tabs · Tooltip · Skeleton/TableSkeleton (loading) · EmptyState · ErrorBanner.
@@ -104,3 +104,15 @@ Composição editorial clara (fundo branco), deliberadamente distinta do tema es
 - Navegação por teclado em modais, tabelas e formulários; foco visível (`focus-visible:ring`) inclusive nos itens de navegação da sidebar.
 - `aria-label` em ícones e botões sem texto (ex.: `CopyButton`, ações de tabela).
 - `prefers-reduced-motion` respeitado globalmente (`src/index.css`).
+
+
+## Entrega de acabamento (11/10/2026)
+
+- Catálogo em `/design-system`, somente no desenvolvimento; amostras identificadas como demonstração.
+- `Ctrl/Cmd K`: consulta real de alvos, scans e artigos; resultados parciais informam falhas. Navegação inclui o inventário de ativos.
+- Filtros e paginação persistidos na URL; retornar de um detalhe preserva o contexto.
+- Login, alvos, artigos e cadastro de usuários usam react-hook-form/zod, erros associados ao campo e bloqueio de envio concorrente. Scans usam validação de formato com zod e gates de escopo/validade; relatórios usam seleção de scans concluídos e controles bloqueados durante geração.
+- Shell estável com carregamento de páginas sob demanda; logout/troca de conta limpa cache; refresh JWT compartilhado entre requisições concorrentes.
+- Dialog/Sheet/AlertDialog restauram foco ao acionador, inclusive quando abertos por estado; conteúdo longo tem rolagem interna e limite pela viewport dinâmica.
+- PDF com Vera TrueType embutida, marcadores por seção, tabela com cabeçalho repetido e findings em blocos completos (evidência sem truncamento). Texto recebido é escapado antes do parsing do ReportLab.
+- Resultados de QA e limites: [estado do redesign](redesign-status.md).

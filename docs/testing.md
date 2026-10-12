@@ -19,7 +19,7 @@
 - **Integração**: endpoints via `APIClient` do DRF, cobrindo status codes, permissões (RBAC) e validações.
 - **Motor de scan (seams)**: todo adapter mantém a lógica de decisão em **módulos puros** (`signatures.py`, `cve.py`, `banners.py`, `tls_analysis.py`, `dns_analysis.py`, `web/passive.py`, `web/injection.py`, `web/exposure.py`, `web/methods.py`, `correlation.py`, `profiles.py`, `targets.py`) testáveis sem rede real, e um **seam de rede fino e monkeypatchável** por adapter (`_fetch`/`_probe`/`_probe_udp`/`_probe_versions`/`_get_cert`/`_query_nvd`/`_axfr`/`_fetch_crtsh`/`_try_login`/`_resolve`) — nenhum teste varre alvos reais, nem no CI nem localmente.
 - **Disciplina de verificação empírica**: antes de confiar em parsing/regex/hashing escritos à mão (bytes de payload UDP, extração de certificado, AXFR), valida-se com um script standalone contra a biblioteca real (`cryptography`, `dnspython`) antes de escrever os testes formais — já pegou bugs reais (regex de banner SSH, `relativize=True` do AXFR truncando hostnames, mock de teste inconsistente) que só apareceriam em uso real.
-- **Estado atual**: 765 testes, cobertura ~90% (`--cov=apps --cov-fail-under=80`).
+- **Estado atual**: 768 testes, cobertura ~90% (`--cov=apps --cov-fail-under=80`).
 
 Rodar:
 ```bash
@@ -45,7 +45,10 @@ docker compose run --rm frontend npm test
 ## E2E
 
 - **Playwright** cobrindo fluxos críticos: login → criar scan → ver findings → gerar relatório.
-- Executado contra o ambiente Docker Compose.
+- Matriz de redesign em `frontend/e2e/redesign.spec.ts`: dois temas, seis tamanhos, overflow, axe, estados, RBAC, teclado, foco e relatórios.
+- Integração opt-in em `frontend/e2e/live-lab.spec.ts`, encaminhando as requisições para a API real de `scripts/redesign_lab.py` (SQLite temporário, motores desligados).
+- `npm run test:e2e` executa a matriz; `BYAKUGAN_LIVE_LAB=1 npm run test:e2e` inclui a API de laboratório.
+- Resultados/limites e reprodução completa em [estado do redesign](redesign-status.md).
 
 ## Boas práticas
 

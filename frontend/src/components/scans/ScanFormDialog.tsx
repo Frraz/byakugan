@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCreateScan, useTargets } from "@/hooks/useData";
 import { errorMessage } from "@/lib/errors";
@@ -326,10 +326,7 @@ export function ScanFormDialog({
                 <TabsTrigger value="target">Alvo cadastrado</TabsTrigger>
                 <TabsTrigger value="inline">Informar manualmente</TabsTrigger>
               </TabsList>
-            </Tabs>
-
-            {mode === "target" ? (
-              <div className="space-y-1.5">
+              <TabsContent value="target" className="space-y-1.5">
                 <Input aria-label="Buscar alvo cadastrado" placeholder="Buscar alvos…" value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); setTargetPage(1); setTargetRef(""); }} />
                 {targetsLoading && <p role="status" className="text-sm text-muted-foreground">Carregando alvos…</p>}
                 {targetsFailed && <ErrorBanner message={errorMessage(targetsError)} onRetry={() => void retryTargets()} />}
@@ -369,9 +366,8 @@ export function ScanFormDialog({
                       </p>
                     );
                   })()}
-              </div>
-            ) : (
-              <div className="space-y-3">
+              </TabsContent>
+              <TabsContent value="inline" className="space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="s-target">Alvo (host / domínio / IP / CIDR)</Label>
                   <Input
@@ -396,8 +392,8 @@ export function ScanFormDialog({
                     placeholder="Vazio = usa o próprio alvo"
                   />
                 </div>
-              </div>
-            )}
+              </TabsContent>
+            </Tabs>
           </section>
 
           {/* 3 — Intensidade */}

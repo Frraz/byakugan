@@ -64,7 +64,7 @@ Conteúdo:
 ```
 
 ## Geração
-- **PDF**: documento profissional via `reportlab` — capa com identidade Byakugan (logo, faixa navy, tagline), cabeçalho/rodapé com numeração "Página X de Y", sumário executivo **narrativo**, gráficos (donut de severidade e barras por categoria), tabelas estilizadas (cabeçalho navy, zebra, coluna de severidade colorida) e seção de **referências** (CVE + links NVD). Ver `apps/reports/pdf.py`.
+- **PDF**: documento profissional via `reportlab` — capa com identidade Byakugan (logo, faixa quase-preta e acento em latão, tagline), cabeçalho/rodapé com numeração "Página X de Y", sumário executivo **narrativo**, gráficos (donut de severidade e barras por categoria), tabelas estilizadas (cabeçalho quase-preto, zebra, coluna de severidade colorida) e seção de **referências** (CVE + links NVD). Ver `apps/reports/pdf.py`.
 - **CSV**: uma linha por finding (para importação em planilhas/SIEM).
 - **JSON**: payload completo (integração com outras ferramentas).
 
@@ -85,3 +85,16 @@ Conteúdo:
 **Narrativa de Ataque (relatório técnico, Fase C12)**: `build_attack_narrative` monta, por ativo, a seção que um pentester sênior escreveria manualmente — não a lista plana de findings, mas **como um atacante encadearia o que foi provado**: os passos com `Evidence.status == proven` (nunca especulação sobre findings não explorados), em ordem de impacto, cada um com sua técnica MITRE ATT&CK (`mitre.resolve_mitre`) e as cadeias de risco do Correlation Engine (`correlation.compute_chains`) que se aplicam ao ativo. Fica **ausente** (não uma seção vazia) quando o scan não tem nenhuma `Evidence` `proven` — exige exploração habilitada e bem-sucedida. No PDF, é a seção **"Narrativa de Ataque"**, entre Findings e Cobertura OWASP.
 
 **Não implementado ainda**: logs brutos do scan no relatório técnico (hoje traz metadados — tipo, status, autorização, timestamps — mas não logs linha a linha).
+
+
+## Acabamento do redesign
+
+PDFs usam Bitstream Vera embutida, títulos navegáveis no painel de marcadores,
+texto selecionável, paginação e cabeçalhos repetidos nas tabelas. Findings são
+blocos extensíveis com descrição, evidência completa, remediação e taxonomia;
+strings observadas são escapadas como texto literal. A data da capa explicita UTC.
+`mitre_technique` acompanha cada finding no PDF, JSON e como coluna adicional ao
+final do CSV, mantendo a ordem das colunas anteriores. Campo vazio continua vazio,
+sem inferência especulativa. Não há tagging PDF/UA nesta implementação do ReportLab.
+A geração continua síncrona; processamento Celery para documentos grandes é uma
+evolução de backend registrada em `docs/tasks.md`.

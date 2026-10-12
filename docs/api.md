@@ -468,3 +468,12 @@ Filtrável por `?mitre_technique=T1190` em `/api/findings/`. **Cobertura deliber
 ```
 
 `status` de cada célula: `proven` > `found` > `tested` > `limited` > `not-tested`. Ver `docs/owasp-coverage.md`.
+
+
+### Exportações após o redesign
+
+O payload técnico de relatórios inclui `findings[].mitre_technique` (string,
+vazia quando não há correspondência). O CSV preserva as colunas anteriores e
+acrescenta `mitre_technique` ao final. Endpoints, permissões e geração síncrona
+permanecem os documentados na seção Relatórios. Minha conta e cadastro admin
+na UI consomem os endpoints de autenticação existentes, sem novo contrato.
